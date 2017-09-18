@@ -1,0 +1,901 @@
+---
+title: "metabolomics analysis for mSphere, Carey et al. 2017"
+author: "Maureen A Carey"
+date: "updated Sept 18th, 2017"
+output: html_document
+---
+
+Set working directory and run helper function (to load libraries and functions) (warnings off here for package loading)
+```{r, warning=F, message=F}
+
+# R version 3.2.4 (2016-03-10)
+base_directory = '/Users/Mo/Desktop/lab/metabolomics/metabolomics_2017_submit'
+setwd(base_directory)
+source("helper_functions_met_methods.R",local = T)
+
+```
+
+Open datafile
+```{r}
+
+raw_file = read.csv("met_methods_raw_data.txt", sep = "\t", header = T, 
+                colClasses = c(rep(NA, 14), rep('numeric',35)), 
+                na.strings=c('',"NA"), stringsAsFactors = F)
+
+raw_backup = raw_file
+
+# comparison 1 for figure 2 and 3
+fig2B = raw_file[1:375,-c(15:19,30:34,40:44)]
+raw_file_comp1 = raw_file[,-c(15:19,30:34,40:44)] # select specified samples
+raw_file_comp1 = raw_file_comp1[,-c(1,3:14)] # remove extra metabolite identifiers
+raw_file_comp1 = raw_file_comp1[1:375,] # remove last empty row
+
+# comparison 2 for figure 4
+raw_file_comp2 = raw_file[,-c(15:29)] # select specified samples
+raw_file_comp2 = raw_file_comp2[,-c(1,3:14)] # remove extra metabolite identifiers
+raw_file_comp2 = raw_file_comp2[1:375,] # remove last empty row
+
+rm(raw_file)
+
+```
+
+Count mets detected and generate Fig 2B
+```{r}
+
+raw = raw_file_comp1
+#in all
+dim(na.omit(raw))
+# G2 = metabolites detected in every G2
+G2 = raw[,1:11]; rownames(G2) = G2$BIOCHEMICAL; G2_all = na.omit(G2)
+# G1_plus = metabolites detected in every G1 sample (G1 from comparison 1 and all from comparison 2)
+G1 = raw[,c(1,12:21)]; rownames(G1) = G1$BIOCHEMICAL; G1_all = na.omit(G1)
+
+find_uni = merge(G2_all,G1_all, by = "row.names", all = T)
+# dim(find_uni[is.na(find_uni$BIOCHEMICAL.y),]) # found in all G2, not all G1
+# dim(find_uni[is.na(find_uni$BIOCHEMICAL.x),]) # found in all G1, not all G2 
+
+# range of metabolites found in each replicate
+for (i in 2:ncol(G2)) {
+  print(length(na.omit(G2[,i]))) }
+for (i in 2:ncol(G1)) {
+  print(length(na.omit(G1[,i]))) }
+
+rm(raw, i,find_uni,G2,G2_all,G1,G1_all)
+
+fig2B = fig2B[,-c(1,5:14)]
+m = melt(fig2B, id.vars = c("BIOCHEMICAL", "SUPER_PATHWAY", "SUB_PATHWAY"))
+m2 = mutate(m, group = ifelse(substr(variable,0,1) == 'C', 'group2','group1'),
+            val2 = ifelse(!is.na(value),1,0))
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Xenobiotics','Other',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Energy',' Energy',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Lipid','Lipids',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Carbohydrates','  Carbohydrates',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Amino Acid','Peptides/AA',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Peptide','Peptides/AA',m2$SUPER_PATHWAY)
+m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == 'Cofactors and Vitamins','Cofactors',m2$SUPER_PATHWAY)
+
+m3 = m2 %>% group_by(group,BIOCHEMICAL, SUPER_PATHWAY) %>% 
+  summarise(cn = sum(val2)) %>% arrange(cn)
+m3$BIOCHEMICAL = factor(m3$BIOCHEMICAL, levels = rev(unique(m3$BIOCHEMICAL[order(m3$cn)])), ordered=TRUE)
+
+dist = ggplot(data = m3, aes(x = factor(BIOCHEMICAL), fill = group)) + 
+  geom_bar(aes(y = cn),stat = "identity",position= "stack") + 
+  facet_grid(~SUPER_PATHWAY, scales = "free_x", space = "free_x") + 
+  xlab(NULL) + guides(fill = F) + custom_theme_dist +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+        strip.text = element_text(size = 5, angle = 90)) + ylab('Samples with metabolite')
+dist
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2b_aug2017.pdf', dist, width = 103, height = 50, units = "mm")
+
+rm(dist, m, m2,m3,fig2B)
+
+```
+
+Plot parasite/DNA/Protein for Fig 2C
+```{r}
+
+raw1 = prep_raw(raw_file_comp1)
+identifiers = prep_sample_identifiers(raw1)
+
+# process sample data for plotting
+df = identifiers[c(3,5,6,8,9),] # keep only protein, dna, parasite measures and IDS
+df = as.data.frame(t(df)) # transpose
+rownames(df) = df$CLIENT_IDENTIFIER; df$CLIENT_IDENTIFIER = NULL
+indx = sapply(df, is.factor); df[indx] = lapply(df[indx], function(x) as.character(x)) 
+df$CLIENT_PROTEIN = as.numeric(df$CLIENT_PROTEIN); df$DSDNA_ASSAY = as.numeric(df$DSDNA_ASSAY)
+df$TOTAL_PARASITES = as.numeric(df$TOTAL_PARASITES)
+
+for (i in 1:nrow(df)) { # re-name samples for ease
+  if (strcmp("Res1_LowD1", df$GROUP_ID[i])) { df$GROUP_ID[i] = "Group 2"}
+  else if (strcmp("Res1_HighD1", df$GROUP_ID[i])) { df$GROUP_ID[i] = "Group 2"}
+  else if (strcmp("Res1_Exp", df$GROUP_ID[i])) { df$GROUP_ID[i] = "Group 1"}
+  else { df$GROUP_ID[i] = "Group 1"} } #if (strcmp("Res2_Exp", df$GROUP_ID[i])) 
+  
+corr_eqn_r <- function(x,y, digits = 4) { corr_coef = round(cor(x, y), digits = digits)
+  paste("italic(r) == ", corr_coef) }
+corr_eqn_p <- function(x,y, digits = 6) { p_value = round(cor.test(x,y)$p.value, digits = digits)
+  paste("italic(pvalue) == ", format(p_value, scientific=FALSE)) }
+
+# plot parasite #, dna amount, and protein amount NOTE LOG10 AXIS
+summary = ggplot(df, aes(x = TOTAL_PARASITES, y = DSDNA_ASSAY )) +
+  custom_theme_pca + theme( plot.margin = unit(c(1,1,1,1),"mm"),
+                        legend.title=element_text(size = 6),
+                        legend.text=element_text(size = 6),
+                        legend.key = element_rect(fill = NA), 
+                        legend.key.height = unit(4, "mm"),
+                        legend.key.width = unit(1.5, "mm"),
+                        legend.position = "bottom",
+                        legend.direction = "horizontal") +
+  geom_smooth(colour = "black", fill = "gray", method = "lm") +
+  geom_point(size=2, aes(color = as.numeric(CLIENT_PROTEIN), shape = GROUP_ID)) + 
+  scale_colour_gradient("Protein \nAmount", low="lightgrey", high="black", 
+                        breaks = c(50,110,161), limits = c(50,161),
+                        labels=c("60","","160")) +
+  scale_shape(NULL) + scale_y_log10() + scale_x_log10() +
+  xlab("Parasite number") + ylab("dsDNA quantification") +
+  annotate("text", label = corr_eqn_r(df$TOTAL_PARASITES,df$DSDNA_ASSAY), 
+           x = 140000000, y = .4, size = 2.7, colour = "black", parse = T) +
+  annotate("text", label = corr_eqn_p(df$TOTAL_PARASITES,df$DSDNA_ASSAY), 
+           x = 150000000, y = .3, size = 2.7, colour = "black", parse = T) 
+summary
+s = summary + guides(shape = F, color = F)
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2c_sample_characteristics_aug2017.png', s, 
+       width = 65, height = 100, units = "mm")
+
+```
+
+```{r}
+summary = ggplot(df, aes(x = TOTAL_PARASITES, y = DSDNA_ASSAY)) +
+  custom_theme_pca + theme( plot.margin = unit(c(1,1,1,1),"mm"),
+                            legend.title=element_text(size = 6),
+                            legend.text=element_text(size = 6),
+                            legend.key = element_rect(fill = NA), 
+                            legend.key.height = unit(4, "mm"),
+                            legend.key.width = unit(1.5, "mm"),
+                            legend.position = "bottom",
+                            legend.direction = "horizontal") +
+  geom_smooth(colour = "black", fill = "gray", method = "lm") +
+  geom_point(size=2, aes(color = GROUP_ID, shape = GROUP_ID)) + 
+  scale_shape(NULL) + scale_y_log10() + scale_x_log10() +
+  xlab("Parasite number") + ylab("dsDNA quantification") +
+  annotate("text", label = corr_eqn_r(df$TOTAL_PARASITES,df$DSDNA_ASSAY), 
+           x = 140000000, y = .4, size = 2.7, colour = "black", parse = T) +
+  annotate("text", label = corr_eqn_p(df$TOTAL_PARASITES,df$DSDNA_ASSAY), 
+           x = 150000000, y = .3, size = 2.7, colour = "black", parse = T) 
+summary
+s = summary + guides(shape = F, color = F)
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('audrey_sample_characteristics_sept2017.pdf', s, 
+       width = 65, height = 100, units = "mm")
+```
+
+
+```{r, results = 'hold'}
+
+group1 = df[df$GROUP_ID == 'Group 1',]; group2 = df[df$GROUP_ID == 'Group 2',]
+
+# print correlation scores for other comparisons
+corr_eqn_r2 <- function(x,y) { corr_coef = round(cor(x, y), digits = 4)}
+corr_eqn_p2 <- function(x,y) { p_value = round(cor.test(x,y)$p.value, digits = 4)}
+
+print('correlation between parasite and protein in all samples (r,p)')
+print(corr_eqn_r2(df$TOTAL_PARASITES,df$CLIENT_PROTEIN))
+print(corr_eqn_p2(df$TOTAL_PARASITES,df$CLIENT_PROTEIN))
+print('correlation between dna and protein in all samples (r,p)')
+print(corr_eqn_r2(df$DSDNA_ASSAY,df$CLIENT_PROTEIN))
+print(corr_eqn_p2(df$DSDNA_ASSAY,df$CLIENT_PROTEIN))
+# NO CORRELATION BETWEEN PROTEIN AND ANYTHING
+
+print('GROUP 1 correlation between parasite and protein (r,p)')
+print(corr_eqn_r2(group1$TOTAL_PARASITES,group1$CLIENT_PROTEIN))
+print(corr_eqn_p2(group1$TOTAL_PARASITES,group1$CLIENT_PROTEIN))
+print('GROUP 1 correlation between dna and protein (r,p)')
+print(corr_eqn_r2(group1$DSDNA_ASSAY,group1$CLIENT_PROTEIN))
+print(corr_eqn_p2(group1$DSDNA_ASSAY,group1$CLIENT_PROTEIN))
+# NO CORRELATION BETWEEN PROTEIN AND ANYTHING IN GROUP1
+
+print('GROUP 2 correlation between parasite and  protein (r,p)')
+print(corr_eqn_r2(group2$TOTAL_PARASITES,group2$CLIENT_PROTEIN))
+print(corr_eqn_p2(group2$TOTAL_PARASITES,group2$CLIENT_PROTEIN))
+print('GROUP 2 correlation between dna and  protein (r,p)')
+print(corr_eqn_r2(group2$DSDNA_ASSAY,group2$CLIENT_PROTEIN))
+print(corr_eqn_p2(group2$DSDNA_ASSAY,group2$CLIENT_PROTEIN))
+# NO CORRELATION BETWEEN PROTEIN AND ANYTHING IN GROUP2
+
+rm(i, indx, summary, group1, group2, raw1, identifiers, corr_eqn_p, corr_eqn_r,df,corr_eqn_p2,corr_eqn_r2)
+
+```
+
+Check to see if median and SD scale (Bias requires log transformation)
+```{r}
+
+raw1 = prep_raw(raw_file_comp1)
+identifiers = prep_sample_identifiers(raw1) 
+raw2 = remove_NAs(raw1)
+raw3 = as.matrix(imputing_missing(raw2,0))
+
+# scale to median (so all metabolite abundances hover around 1)
+df = as.data.frame(raw3); df$mets = rownames(df)
+df = mutate(df, med = apply(df[,-c(21)],1,median), stand_dev = apply(df[,-c(21)],1,sd))
+df2 = df[,c(21:23)] # keep just median and SD
+
+df2= df2[order(df2$med,df2$stand_dev),]
+ggplot(data = df2, aes(x = med, y = stand_dev)) + geom_point() + 
+  scale_x_log10() + scale_y_log10() + geom_smooth(method = 'loess') + 
+  xlab('Median') + ylab('SD') + ggtitle("Median & Variance scale (common bias in Mass Spec)")
+
+# repeat with logged data
+df = as.data.frame(log2(raw3));df$mets = rownames(df)
+df = mutate(df, log_med = apply(df[,-c(21)],1,median), log_stand_dev = apply(df[,-c(21)],1,sd))
+df2 = df[,c(21:23)] # keep just median and SD
+
+df2= df2[order((df2$log_med),(df2$log_stand_dev)),]
+ggplot(data = df2, aes(x = log_med, y = log_stand_dev)) + geom_point() + 
+  scale_x_log10() + scale_y_log10() + geom_smooth(method = 'loess') + 
+  xlab('Median') + ylab('SD') +
+  ggtitle("Bias removed: Median & Variance no longer scale\n note: log scale data from now on")
+
+rm(df,df2, raw1, raw2, raw3)
+
+```
+
+Notes to self: Check Aug1 file for history of changes 
+Aug 9 has correlation plots and exploration of median v mean centering, removal of outliers
+
+Preprocess data (Comparison 1)
+```{r}
+
+raw1 = prep_raw(raw_file_comp1) # adjust formating
+identifiers = prep_sample_identifiers(raw1) # extract relevant samples
+raw_remove_NAs = remove_NAs(raw1) # check no nondetected metabolites due to subset
+no_missing_data = imputing_missing(raw_remove_NAs, 0) #imput missing values
+
+labels1 = c("S1","S1","S1","S1","S1","S1","S1","S1","S1","S1",
+            "S2","S2","S2","S2","S2","S2","S2","S2","S2","S2")
+
+# Sample normalization
+norm_dna = normalize(no_missing_data,identifiers,"dna") # DNA NORMALIZATION
+norm_pro = normalize(no_missing_data,identifiers,"protein") # PROTEIN NORMALIZATION
+norm_para = normalize(no_missing_data,identifiers,"para") # PARASITE NUMBER NORMALIZATION
+
+# Feature normalization (log, center, scale)
+# log
+log_nonorm = log2(no_missing_data)
+log_dna = log2(norm_dna)
+log_pro = log2(norm_pro)
+log_para = log2(norm_para)
+# prep format for PCA
+data_transposed_unnorm = t(log_nonorm)
+data_transposed_dna = t(log_dna) 
+data_transposed_pro = t(log_pro)
+data_transposed_para = t(log_para)
+# [median] center & [sd] scale
+data_for_pca_unnorm = median_center_scale_data(data_transposed_unnorm) 
+data_for_pca_dna = median_center_scale_data(data_transposed_dna) 
+data_for_pca_pro = median_center_scale_data(data_transposed_pro) 
+data_for_pca_para = median_center_scale_data(data_transposed_para) 
+
+rm(raw1,identifiers,raw_remove_NAs,no_missing_data,data_transposed_unnorm,data_transposed_dna,data_transposed_para,data_transposed_pro,log_pro,log_para,log_dna,log_nonorm,norm_para,norm_pro,norm_dna,raw_file_comp1)
+
+```
+
+Preprocess data (Comparison 2)
+```{r}
+
+raw1 = prep_raw(raw_file_comp2) # adjust formating
+identifiers_comp2 = prep_sample_identifiers(raw1) # extract relevant samples
+raw_remove_NAs = remove_NAs(raw1) # check no nondetected metabolites due to subset
+no_missing_data = imputing_missing(raw_remove_NAs, 0) #imput missing values
+
+labels1_comp2 = c("S1","S1","S1","S1","S1","S2","S2","S2","S2","S2",
+            "S1","S1","S1","S1","S1","S2","S2","S2","S2","S2")
+
+# Sample normalization
+norm_dna_comp2 = normalize(no_missing_data,identifiers_comp2,"dna") # DNA NORMALIZATION
+
+# Feature normalization (log, center, scale)
+# log
+log_dna_comp2 = log2(norm_dna_comp2)
+# prep format for PCA
+data_transposed_dna_comp2 = t(log_dna_comp2)
+# [median] center & [sd] scale
+data_for_pca_dna_comp2 = median_center_scale_data(data_transposed_dna_comp2) 
+
+rm(data_transposed_dna_comp2,log_dna_comp2,norm_dna_comp2,no_missing_data,raw_remove_NAs,raw1, raw_file_comp2,identifiers_comp2)
+
+```
+
+Princple Component Analysis without NORMALIZATION
+```{r}
+
+pca_data <- prcomp(data_for_pca_unnorm, center = F, scale. = F)
+summary(pca_data)
+
+data_plot = data.frame(pca_data$x[,c(1,2)]) # Adjust for plotting
+unscaled = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), 
+                 size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) +
+  theme(plot.margin = unit(c(1,0,1,0),"mm")) + # top, right, bottom, and left 
+  ggtitle("No normalization") + ylab("PC2") + xlab("PC1")
+
+audrey = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), color = factor(labels1), 
+                 size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) +
+  theme(plot.margin = unit(c(1,0,1,0),"mm")) + # top, right, bottom, and left 
+  ggtitle("No normalization") + ylab("PC2") + xlab("PC1")
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2d_no_norm_aug2017.pdf', unscaled, 
+       width = 42, height = 42, units = "mm")
+# setwd(paste(base_directory,'/figures',sep=""))
+# ggsave('audrey_no_norm_sept2017.pdf', audrey, 
+#        width = 42, height = 42, units = "mm")
+
+rotation_a = pca_data$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t = c(); t$PC1_no_norm = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_no_norm = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(pca_data,data_plot,rotation_a)
+
+```
+
+Now explore normalization methods
+```{r}
+# PCA for DNA NORMALIZATION
+pca_dna <- prcomp(data_for_pca_dna, center = F, scale. = F)
+summary(pca_dna)
+
+data_plot = data.frame(pca_dna$x[,c(1,2)])
+dna = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) + 
+  theme(plot.margin = unit(c(1,1,1,2),"mm")) + # top, right, bottom, and left
+  ggtitle("DNA") + ylab(NULL) + xlab("PC1")
+
+audrey = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), color = factor(labels1), size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) + 
+  theme(plot.margin = unit(c(1,1,1,2),"mm")) + # top, right, bottom, and left
+  ggtitle("DNA") + ylab(NULL) + xlab("PC1")
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2d_dna_norm_aug2017.pdf', dna,width = 42, height = 42, units = "mm")
+# setwd(paste(base_directory,'/figures',sep=""))
+# ggsave('audrey_dna_norm_sept2017.pdf', audrey,width = 42, height = 42, units = "mm")
+
+rotation_a = pca_dna$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_dna = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_dna = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(data_plot,pca_dna, rotation_a)
+
+# Princple Component Analysis for PARASITE NUMBER NORMALIZATION
+pca_para <- prcomp(data_for_pca_para, center = F, scale. = F)
+summary(pca_para)
+
+data_plot = data.frame(pca_para$x[,c(1,2)])
+para = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), size=I(2), show.legend = FALSE,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) +
+  theme(plot.margin = unit(c(1,1,1,2),"mm")) +
+  ggtitle("Parasite number") +  xlab("PC1") + ylab(NULL)
+
+audrey = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1),color = factor(labels1), size=I(2), show.legend = FALSE,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17)) +
+  theme(plot.margin = unit(c(1,1,1,2),"mm")) +
+  ggtitle("Parasite number") +  xlab("PC1") + ylab(NULL)
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2d_para_norm_aug2017.pdf', para, width = 42, height = 42, units = "mm")
+# setwd(paste(base_directory,'/figures',sep=""))
+# ggsave('audrey_para_norm_aug2017.pdf', audrey, width = 42, height = 42, units = "mm")
+
+rotation_a = pca_para$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_para = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_para = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(data_plot,pca_para,rotation_a)
+
+# Princple Component Analysis for PROTEIN NORMALIZATION
+pca_pro <- prcomp(data_for_pca_pro, center = F, scale. = F) 
+summary(pca_pro) 
+
+data_plot = data.frame(pca_pro$x[,c(1,2)])
+pro = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1), size=I(2), show.legend = F,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17))+ 
+  theme(plot.margin = unit(c(1,2,1,1),"mm")) +
+  ggtitle("Protein") +  xlab("PC1") +ylab(NULL)
+
+audrey = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels1),color = factor(labels1), size=I(2), show.legend = F,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17))+ 
+  theme(plot.margin = unit(c(1,2,1,1),"mm")) +
+  ggtitle("Protein") +  xlab("PC1") +ylab(NULL)
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_2d_pro_norm_aug2017.pdf', pro, width = 42, height = 42, units = "mm")
+# setwd(paste(base_directory,'/figures',sep=""))
+# ggsave('audrey_pro_norm_sept2017.pdf', audrey, width = 42, height = 42, units = "mm")
+
+rotation_a = pca_pro$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_pro = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_pro = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(rotation_a,data_plot,pca_pro)
+
+# save plot
+setwd(paste(base_directory,'/figures',sep=""))
+print(multiplot(unscaled,dna,para,pro,cols = 4))
+tiff(filename = "test_pca_multi_panel_aug2017.tiff", width = 180, height = 45, 
+     units = "mm", , res = 300)
+multiplot(unscaled,dna,para,pro,cols = 4)
+dev.off()
+
+# save loadings
+setwd(paste(base_directory,'/figures',sep=""))
+write.table(as.data.frame(t), "PC_list_aug2017.csv", sep = ',',col.names = T, row.names = F)
+rm(unscaled,dna,para,pro,t)
+
+# calc avg scaled values within experimental conditions/replicates G1 v G2 USING PARA NUMBER NORM
+data = t(data_for_pca_para) # metabolites as rows again
+
+# calculate SD and mean
+j = nrow(data)
+data2 = as.data.frame(rbind(data,c(rep(-10,10),rep(10,10)))) # groups
+j = nrow(data2); data2 = make_numeric(data2)
+data3 = mutate(data2, met = rownames(data2),
+               met_sd_group1 = apply(data2[,data2[j,] == 10], 1, sd), # SD 
+               met_mean_group1 = rM(data2[,data2[j,] == 10]),
+               met_sd_group2 = apply(data2[,data2[j,] == -10], 1, sd ), # SD 
+               met_mean_group2 = rM(data2[,data2[j,] == -10]))
+
+# calc FC and signficance
+fc_data = mutate(data3,fc = met_mean_group1/met_mean_group2)
+j = nrow(fc_data); fc_data$pval[j] = NA
+for (i in 1:(j-1)) { 
+  group1 = fc_data[i,which(fc_data[j,] == 10)]; group1$met_mean_group1 = NULL
+  group2 = fc_data[i,which(fc_data[j,] == -10)]; group2$met_mean_group2 = NULL
+  i_result = t.test(group1,group2, alternative="two.sided", var.equal=F)  #welch's t-test
+  fc_data$pval[i] = i_result$p.value }
+
+# Multiple testing correction
+fc_data = mutate(fc_data, adj_pval = p.adjust(fc_data$pval, method = "fdr"))
+
+# significant comparisons
+significant = subset(fc_data, fc_data$adj_pval <0.05)
+
+setwd(paste(base_directory,'/figures',sep=""))
+write.table(significant,"fc_G1_v_G2_aug2017_log.csv",sep = ',',col.names = T,row.names = T)
+
+hi = ggplot(data = significant) + geom_histogram(aes(significant$fc), bins = 100) +
+  #geom_vline(xintercept = 2, color = "red", size = 2) + 
+  custom_theme2 + xlab("Fold Change") + ylab(NULL)
+hi
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('distribution_FC_aug2017.pdf',hi,width = 3,height = 3)
+
+rm(significant,hi,i,i_result,j,data,data2,data3,group1,group2,fc_data)
+
+```
+
+Comparison 2: Process blood batch data
+```{r}
+
+# data_for_pca_dna_comp2
+setwd(base_directory)
+blood_batch = read.table("blood_batch_data.csv",sep = ',', header = T)
+blood_batch = blood_batch[-c(1:15),]; rownames(blood_batch) = NULL
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("(-)", "_minus", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("(+)", "_plus", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("-", "_", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub(" ", "", x,fixed = TRUE)})
+
+rownames(blood_batch) = blood_batch$GROUP_NUMBER
+data = as.data.frame(merge(blood_batch, data_for_pca_dna_comp2, by = 'row.names'))
+rownames(data) = data$Row.names;  data = data[,-c(1:3,5)]; colnames(data)[1] = 'blood'
+
+use_for_pca = make_numeric(as.data.frame(data))
+use_for_pca$blood = as.factor(as.character(use_for_pca$blood))
+
+rm(blood_batch,data,data_for_pca_dna_comp2)
+
+```
+
+PCA blood batch
+```{r}
+
+# prep labels
+labels_unique = rownames(use_for_pca); substring(labels_unique, 5, 5) = "_"
+labels_blood_batch = use_for_pca$blood
+
+labels_drug = lapply(rownames(use_for_pca), 
+                    function(x) {substr(x,nchar(x)-4,nchar(x))})
+labels_drug = unlist(labels_drug)
+labels_drug = ifelse(labels_drug == '_plus','plus','minus')
+
+# pca
+pca_dna <- prcomp(use_for_pca[,-c(1)], center = F, scale. = F) 
+summary(pca_dna)
+
+data_plot = data.frame(pca_dna$x[,c(1:4)])
+extra = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+  geom_point(aes(color = factor(labels_blood_batch), 
+                 shape = factor(labels_unique)), 
+             size=I(4), alpha = .9) +
+  custom_theme3 + 
+  scale_shape_manual(values = c(15:18)) +
+  theme(plot.margin = unit(c(1,6,6,6),"mm"), # top, right, bottom, and left
+        legend.title = element_text(size = 12)) +
+  guides(color = guide_legend(title = 'Blood Batch'),
+         shape = guide_legend(title = 'Parasite with drug')) +
+  ggtitle("blood batch v drug treatment") + ylab("PC2") + xlab("PC1")
+extra
+
+fig_for_viewing = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+  geom_point(aes(color = factor(labels_blood_batch),
+             shape = factor(labels_drug)), 
+             size=I(2), alpha = .9) +
+  scale_shape_manual(values = c(15:16)) + 
+  custom_theme3 + theme( plot.margin = unit(c(1,1,1,1),"mm"),
+                        legend.title=element_text(size = 8),
+                        legend.text=element_text(size = 6),
+                        legend.key = element_rect(fill = NA), 
+                        legend.key.height = unit(4, "mm"),
+                        legend.key.width = unit(2, "mm"),
+                        legend.position = "bottom",
+                        legend.direction = 'vertical') +
+  guides(color = guide_legend(title = 'Blood\nBatch'),
+         shape = guide_legend(title = 'Parasite\nwith drug')) +
+  ggtitle("blood batch v drug treatment") + 
+  ylab("PC2") + xlab("PC1")
+fig_for_viewing
+
+
+fig = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+  geom_point(aes(color = factor(labels_blood_batch),
+             shape = factor(labels_drug)), 
+             size=I(2), alpha = .9) +
+  scale_shape_manual(values = c(15:16)) + 
+  custom_theme3 + theme( plot.margin = unit(c(1,1,1,1),"mm")) +
+  guides(color = FALSE,shape = FALSE) + 
+  ylab("PC2") + xlab("PC1")
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('blood_batch_drug_pca_aug2017.pdf', fig, width = 60, height = 58, units = "mm")
+
+rm(extra, fig, fig_for_viewing,labels_unique,labels_drug,labels_blood_batch,data_plot,pca_dna)
+
+```
+
+Predict blood batch con't (hide warnings here)
+```{r, warning= F}
+
+comparison_2_df = remove_characters_from_colnames(use_for_pca) 
+which(duplicated(colnames(comparison_2_df)))
+
+```
+
+FC, if you aren't getting sig hits here, classification based methods will not reveal anything unless sample size is large enough for non linear effects to emerge.
+
+Calculate Drug/NoDrug FC for comparison 2
+```{r}
+
+df = comparison_2_df
+df$blood = NULL
+df = mutate(df,sample = rownames(df),
+            drug = substr(rownames(df),nchar(rownames(df))-3, nchar(rownames(df))))
+df$drug = ifelse(df$drug == 'inus',-10,10)
+rownames(df) = df$sample; df$sample = NULL
+scaled = make_numeric(as.data.frame(t(df)))
+
+# calculate SD and mean
+j = nrow(scaled)
+scaled2 = mutate(scaled, 
+                 met = rownames(scaled),
+                 met_sd_group1 = apply(scaled[,scaled[j,] == 10], 1, sd), # SD 
+                 met_mean_group1 = rM(scaled[,scaled[j,] == 10]), # MU 
+                 met_sd_group2 = apply(scaled[,scaled[j,] == -10], 1, sd ), # SD 
+                 met_mean_group2 = rM(scaled[,scaled[j,] == -10]))
+
+fc_data = mutate(scaled2,fc = met_mean_group1/met_mean_group2)
+
+j = nrow(fc_data); fc_data$pval[j] = NA
+for (i in 1:(j-1)) { 
+  group1 = fc_data[i,which(fc_data[j,] == 10)]; group1$met_mean_group1 = NULL
+  group2 = fc_data[i,which(fc_data[j,] == -10)]; group2$met_mean_group23 = NULL
+  i_result = t.test(group1,group2, alternative="two.sided", var.equal=F)  #welch's t-test
+  fc_data$pval[i] = i_result$p.value }
+
+# Multiple testing correction
+fc_data = mutate(fc_data, adj_pval = p.adjust(fc_data$pval, method = "fdr"))
+
+hi = ggplot(data = fc_data[-j,]) + geom_histogram(aes(fc_data$adj_pval[-j]), bins = 100) +
+  custom_theme2 + scale_y_sqrt() +
+  xlab("adjusted p values") + ylab('count (sqrt)')
+hi
+
+significant = subset(fc_data, adj_pval < 0.05) # NOTHING SIGNFICANT WHEN COMPARING DRUG TREATED TO UNTREATED
+dim(significant)
+
+rm(significant,i,j,df, group1,group2,fc_data,hi,scaled)
+
+```
+
+Distance heatmap in Aug 9 version
+
+Calculate Blood batch FC
+```{r}
+
+# only trying to predict blood batch 1
+df = make_numeric(comparison_2_df)
+
+df$blood[df$blood == '2'] = '23'
+df$blood[df$blood == '3'] = '23'
+scaled = make_numeric(as.data.frame(t(df)))
+
+# calculate SD and mean
+scaled = mutate(scaled, 
+                met = rownames(scaled),
+                met_sd_group1 = apply(scaled[,scaled[1,] == 1], 1, sd), # SD 
+                met_mean_group1 = rM(scaled[,scaled[1,] == 1]), # MU 
+                met_sd_group23 = apply(scaled[,scaled[1,] == 23], 1, sd ), # SD 
+                met_mean_group23 = rM(scaled[,scaled[1,] == 23]))
+
+fc_data = mutate(scaled,fc = met_mean_group1/met_mean_group23)
+
+fc_data$pval[1] = NA
+for (i in 2:nrow(fc_data)) {
+  group1 = fc_data[i,which(fc_data[1,] == 1)]; group1$met_mean_group1 = NULL
+  group1$met_sd_group1 = NULL
+  group2 = fc_data[i,which(fc_data[1,] == 23)]; group2$met_mean_group23 = NULL
+  group2$met_sd_group23 = NULL
+  i_result = t.test(group1,group2, 
+                    alternative="two.sided", var.equal=F)  #welch's t-test
+  fc_data$pval[i] = i_result$p.value }
+
+# Multiple testing correction
+fc_data = mutate(fc_data, adj_pval = p.adjust(fc_data$pval, method = "fdr"))
+
+plot_fc = fc_data[-c(1),]
+hi = ggplot(data = plot_fc) + geom_histogram(aes(plot_fc$adj_pval), bins = 100) +
+  custom_theme2 + scale_y_sqrt() +
+  xlab("adjusted p values") + ylab('sqrt count')
+hi
+
+significant = subset(fc_data, adj_pval < 0.05) # 1 met SIGNFICANT
+significant
+
+rm(significant,i,df, group1,group2,fc_data,plot_fc,hi,scaled)
+
+```
+
+Predict blood batch 1 : RF
+```{r}
+
+df = as.data.frame(comparison_2_df)
+df = make_numeric(df)
+df$blood[df$blood == '2'] = '23'
+df$blood[df$blood == '3'] = '23'
+df$blood = as.factor(df$blood)
+
+# split into training and validation data set # NOT NEEDED FOR RF, inherent in implementation
+varNames = names(df); varNames = varNames[!varNames %in%  c("blood")]
+varNames1 = paste(varNames, collapse = "+")
+formula = as.formula(paste("blood", varNames1, sep = " ~ ")) 
+set.seed(2017)
+rf_blood = randomForest(formula, data = df, ntree=500, na.action = "na.omit", importance=T, classwt = c(.33,.67)) # class imbalance -> increase penalty for less abundant class
+# OOB estimate of  error rate: 30%
+# Confusion matrix:
+#     1 2_3 class.error
+# 1   4   4        0.50
+# 23 2   10        0.17
+return(rf_blood) 
+
+#varImpPlot(rf_blood, sort = T,main="Variable Importance for RF",n.var=10)
+blood_imp = as.data.frame(rf_blood$importance)
+blood_imp = blood_imp[order(blood_imp$MeanDecreaseAccuracy),]
+blood_imp_rf = blood_imp[,-c(1:2)]
+top_blood_imp_rf = blood_imp_rf[(nrow(blood_imp_rf)-10):nrow(blood_imp_rf),]
+worst_blood_imp_rf = blood_imp_rf[1:10,]
+
+dim(blood_imp[blood_imp$MeanDecreaseAccuracy>0,])
+
+# fancier plotting 
+ggplot() + geom_histogram(data=blood_imp_rf, aes(x = MeanDecreaseAccuracy), bins = 50)
+
+# plot top blood predictors
+top_blood_imp_rf = mutate(top_blood_imp_rf, met = rownames(top_blood_imp_rf))
+
+top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'uridine5diphosphateUDP')] = 'UDP'
+top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'gammaaminobutyrateGABA')] = 'GABA'
+top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'adenosine5diphosphoriboseADPribose')] = 'ADP-ribose'
+top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'adenosine5monophosphateAMP')] = 'AMP'
+top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'cytidine5diphosphoethanolamine')] = 'CDP-ethanolamine'
+
+ordr = order(top_blood_imp_rf$MeanDecreaseAccuracy)
+top_blood_imp_rf$met <- factor(top_blood_imp_rf$met, levels = top_blood_imp_rf$met[ordr])
+top = ggplot() + theme( plot.margin = unit(c(1,1,1,1),"mm")) +
+  geom_point(data=top_blood_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +  
+  custom_theme_pca + ylab(NULL)
+  #ggtitle('metabolites most predictive of blood batch') + 
+top
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_3part_topBB_mets_aug2017.pdf', top, width = 70, height = 50, units = "mm")
+
+#plot worst blood predictors
+worst_blood_imp_rf = mutate(worst_blood_imp_rf, met = rownames(worst_blood_imp_rf))
+ordr = order(worst_blood_imp_rf$MeanDecreaseAccuracy)
+worst_blood_imp_rf$met <- factor(worst_blood_imp_rf$met, levels = worst_blood_imp_rf$met[ordr])
+worst = ggplot() + 
+  geom_point(data=worst_blood_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +
+  custom_theme_pca + ylab(NULL) 
+  #ggtitle('metabolites least predictive of blood batch') + 
+worst
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_3part_worstBB_mets_aug2017.pdf', worst, width = 80, height = 60, units = "mm")
+
+rm(worst_blood_imp_rf,top_blood_imp_rf,ordr,blood_imp,blood_imp_rf,rf_blood,df,top,worst)
+```
+
+Predict sample group : RF
+```{r}
+
+df = as.data.frame(comparison_2_df)
+df = mutate(df, sample = rownames(df), drug = substr(sample, nchar(sample)-4, nchar(sample))) 
+rownames(df) = df$sample
+df$drug = as.factor(df$drug)
+df$sample = NULL; df$blood = NULL
+df[,-c(ncol(df))] = make_numeric(df[,-c(ncol(df))])
+
+# split into training and validation data set # NOT NEEDED FOR RF, inherent in implementation
+varNames = names(df); varNames = varNames[!varNames %in%  c("drug")]
+varNames1 = paste(varNames, collapse = "+")
+formula = as.formula(paste("drug", varNames1, sep = " ~ ")) 
+set.seed(2017)
+rf_Drug = randomForest(formula, data = df, ntree=500, na.action = "na.omit", importance=T)
+# OOB estimate of  error rate: 30%
+# Confusion matrix:
+#       _plus minus class.error
+# _plus     7     3         0.3
+# minus     3     7         0.3
+return(rf_Drug)
+
+#varImpPlot(rf_Drug, sort = T,main="Variable Importance for RF",n.var=10)
+drug_imp = as.data.frame(rf_Drug$importance)
+drug_imp = drug_imp[order(drug_imp$MeanDecreaseAccuracy),]
+drug_imp_rf = drug_imp[,-c(1:2)]
+top_drug_imp_rf = drug_imp_rf[(nrow(drug_imp_rf)-10):nrow(drug_imp_rf),]
+worst_drug_imp_rf = drug_imp_rf[1:10,]
+
+dim(drug_imp[drug_imp$MeanDecreaseAccuracy>0,])
+
+# fancier plotting 
+ggplot() + geom_histogram(data=drug_imp_rf, aes(x = MeanDecreaseAccuracy), bins = 50)
+
+# plot top blood predictors
+top_drug_imp_rf = mutate(top_drug_imp_rf, met = rownames(top_drug_imp_rf))
+
+top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N1linoleoyl2arachidonoylGPC182204n6_predicted')] = '1-linoleoyl 2-arachidonoylGPC (predicted)'
+top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N11enylstearoyl2linoleoylGPEP180182_predicted')] = '11-enylstearoyl 2-linoleoylGPE (predicted)'
+top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'leucylglutamine_predicted')] = 'leucylglutamine (predicted)'
+top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'Nacetylmethionine')] = 'acetylmethionine'
+top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N1margaroylglycerol170')] = '1-margaroyl glycerol'
+
+ordr = order(top_drug_imp_rf$MeanDecreaseAccuracy)
+top_drug_imp_rf$met <- factor(top_drug_imp_rf$met, levels = top_drug_imp_rf$met[ordr])
+top = ggplot() + theme( plot.margin = unit(c(1,2.5,1,1),"mm")) +
+  geom_point(data=top_drug_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +  
+  custom_theme_pca + ylab(NULL)
+  #ggtitle('metabolites most predictive of drug treatment') + 
+top
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_3part_top_Drug_mets_aug2017.pdf', top, width = 94, height = 50, units = "mm")
+
+#plot worst blood predictors
+worst_drug_imp_rf = mutate(worst_drug_imp_rf, met = rownames(worst_drug_imp_rf))
+ordr = order(worst_drug_imp_rf$MeanDecreaseAccuracy)
+worst_drug_imp_rf$met <- factor(worst_drug_imp_rf$met, levels = worst_drug_imp_rf$met[ordr])
+worst = ggplot() + 
+  geom_point(data=worst_drug_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +
+  custom_theme_pca + 
+  ggtitle('metabolites least predictive of drug treatment') + ylab(NULL) 
+worst
+
+setwd(paste(base_directory,'/figures',sep=""))
+ggsave('fig_3part_worst_Drug_mets_aug2017.pdf', worst, width = 80, height = 60, units = "mm")
+
+```
+
+```{r}
+setwd(base_directory)
+raw_file = read.csv("met_methods_raw_data.txt", sep = "\t", header = T, 
+                colClasses = c(rep(NA, 14), rep('numeric',35)), 
+                na.strings=c('',"NA"), stringsAsFactors = F)
+raw_file = raw_file[-376,-c(1,5:14)]
+
+raw1 = prep_raw(raw_file)
+identifiers = prep_sample_identifiers(raw1)
+df = raw1[c(131,204,289),-c(1,2)]
+# cholesterol and HEPES are correlated in raw data
+cor.test(as.numeric(df[1,]),as.numeric(df[2,]))
+# cholesterol and phenolred are correlated in raw data
+cor.test(as.numeric(df[1,]),as.numeric(df[3,]))
+# HEPES and phenolred are correlated in raw data
+cor.test(as.numeric(df[2,]),as.numeric(df[3,]))
+
+colnames(identifiers) = identifiers[3,]
+
+df = (merge(t(identifiers), t(df), by = 'row.names'))
+df = as.data.frame(df)
+
+#none
+cor.test(as.numeric(df$CLIENT_PROTEIN), as.numeric(df$cholesterol))
+#none
+cor.test(as.numeric(df$TOTAL_PARASITES), as.numeric(df$cholesterol))
+# minimally correlated
+cor.test(as.numeric(df$DSDNA_ASSAY), as.numeric(df$cholesterol))
+
+#none
+cor.test(as.numeric(df$CLIENT_PROTEIN), as.numeric(df$phenolred))
+#none
+cor.test(as.numeric(df$TOTAL_PARASITES), as.numeric(df$phenolred))
+# correlated
+cor.test(as.numeric(df$DSDNA_ASSAY), as.numeric(df$phenolred))
+
+#none
+cor.test(as.numeric(df$CLIENT_PROTEIN), as.numeric(df$HEPES))
+#none
+cor.test(as.numeric(df$TOTAL_PARASITES), as.numeric(df$HEPES))
+# correlated
+cor.test(as.numeric(df$DSDNA_ASSAY), as.numeric(df$HEPES))
+
+df = t(data_for_pca_unnorm[,c(131,204,289)])
+# cholesterol and HEPES are not correlated in unnormalized data
+cor.test(as.numeric(df[1,]),as.numeric(df[2,]))
+# cholesterol and phenolred are not correlated in unnormalized data
+cor.test(as.numeric(df[1,]),as.numeric(df[3,]))
+# HEPES and phenolred ARE correlated in unnormalized data
+cor.test(as.numeric(df[2,]),as.numeric(df[3,]))
+
+df = t(data_for_pca_dna[,c(131,204,289)])
+# cholesterol and HEPES are correlated in dna_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[2,]))
+# cholesterol and phenolred are anti correlated in dna_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[3,]))
+# HEPES and phenolred ARE anti correlated in dna_norm data
+cor.test(as.numeric(df[2,]),as.numeric(df[3,]))
+
+
+df = t(data_for_pca_pro[,c(131,204,289)])
+# cholesterol and HEPES are not correlated in pro_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[2,]))
+# cholesterol and phenolred are not correlated in pro_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[3,]))
+# HEPES and phenolred ARE correlated in pro_norm data
+cor.test(as.numeric(df[2,]),as.numeric(df[3,]))
+
+
+df = t(data_for_pca_para[,c(131,204,289)])
+# cholesterol and HEPES are correlated in para_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[2,]))
+# cholesterol and phenolred are anti correlated in pro_norm data
+cor.test(as.numeric(df[1,]),as.numeric(df[3,]))
+# HEPES and phenolred are not correlated in pro_norm data
+cor.test(as.numeric(df[2,]),as.numeric(df[3,]))
+
+
+```
+
