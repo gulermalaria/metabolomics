@@ -1,0 +1,1468 @@
+---
+title: "metabolomics analysis for mSphere, Carey et al. 2018"
+author: "Maureen A Carey"
+date: "updated Feb 20th, 2018"
+output: html_document
+---
+
+1 Set working directory and run helper function (to load libraries and functions) (warnings off here for package loading)
+```{r "setup", include=FALSE, warning=F, message=F}
+# Updated to R version 3.4.3 from 3.2.4 (2016-03-10) on Dec 15th 2017
+source("/Users/maureencarey/local_documents/work/metabolomics_methods/code/helper_functions_met_methods.R",local = F)
+opts_knit$set(root.dir = "/Users/maureencarey/local_documents/work/metabolomics_methods/figures")
+
+```
+
+2 Open datafile
+```{r}
+
+raw_file = read.csv("/Users/maureencarey/local_documents/work/metabolomics_methods/data/met_methods_raw_data.txt", 
+                    sep = "\t", header = T, colClasses = c(rep(NA, 14), rep('numeric',35)), 
+                    na.strings=c('',"NA"), stringsAsFactors = F)
+
+fig1D = raw_file[1:375,-c(1,5:29)] # select specified samples and remove empty last row
+raw_file_comp1 = raw_file[1:375,-c(1,3:29)] # select specified samples, and remove extra metabolite identifiers and last empty row
+
+print(raw_file_comp1[raw_file_comp1$BIOCHEMICAL == 'kynurenine',])
+print(raw_file_comp1[raw_file_comp1$BIOCHEMICAL == 'HEPES',])
+print(raw_file_comp1[raw_file_comp1$BIOCHEMICAL == 'phenol red',])
+
+```
+
+3 Count mets detected and generate Fig 1D
+``` {r}
+
+raw = raw_file_comp1
+print('number of metabolites in all samples')
+dim(na.omit(raw)) #in all
+print('number of metabolites in each sample')
+# for (i in 2:ncol(raw)) { print(length(na.omit(raw[,i]))) }
+rm(raw)
+
+m = melt(fig1D, id.vars = c("BIOCHEMICAL", "SUPER_PATHWAY", "SUB_PATHWAY"))
+m2 = mutate(m, val2 = ifelse(!is.na(value),1,0)) # Is metabolite measured in sample, yes/no
+
+change_pathways = as.data.frame(rbind(c('Xenobiotics','Other'),
+                                      c('Amino Acid','AA/Peptides'),
+                                      c('Peptide','AA/Peptides'),
+                                      c('Cofactors and Vitamins','Cofactors')))
+for (i in 1:nrow(change_pathways)) {
+  search_term = as.character(change_pathways$V1[i])
+  replace_term = as.character(change_pathways$V2[i])
+  m2$SUPER_PATHWAY = ifelse(m2$SUPER_PATHWAY == search_term,replace_term,m2$SUPER_PATHWAY)}
+
+m4 = m2 %>%
+  mutate(variable2 = paste(substr(as.character(variable), 1, 4), substr(variable, 7, nchar(as.character(variable))), sep='')) %>%
+  group_by(BIOCHEMICAL, SUPER_PATHWAY, variable2) %>%
+  summarise(samples = sum(val2)) %>% arrange(samples) %>%
+  mutate(detected = ifelse(samples == 0, NA, 'detected')) %>% na.omit() %>%
+  mutate(drug = ifelse(substr(variable2, 4,6)== '_mi','untreated','with DHA'),
+         clone = substr(variable2, 1,3),
+         sens_res = ifelse(clone == 'BAT','Resistant (MRA-1240)','Sensitive (MRA-1238)'))
+
+m5 = m2 %>%
+  mutate(variable2 = paste(substr(as.character(variable), 1, 4), substr(variable, 7, nchar(as.character(variable))), sep='')) %>%
+  group_by(BIOCHEMICAL, SUPER_PATHWAY) %>%
+  summarise(samples = sum(val2)) %>% arrange(samples) %>%
+  mutate(detected = ifelse(samples == 0, NA, 'detected')) %>% na.omit() %>%
+  mutate(group = 'all samples')
+
+p1 = ggplot(data = m5, aes(x = SUPER_PATHWAY, y = samples, fill = SUPER_PATHWAY)) +
+  geom_boxplot() +
+  theme(axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        strip.text.x = element_text(size = 7, family = "Helvetica"),
+        panel.grid.major = element_blank(),
+        axis.text.y = element_text(size = 7, family = "Helvetica"),
+        #strip.background = element_blank(),
+        legend.text = element_text(size = 6, family = "Helvetica"),
+        plot.margin = ggplot2::margin(1,1,1,1,"mm"),
+        axis.text.x = element_blank()) +
+  guides(fill = FALSE) + facet_wrap(~group)
+
+p2 = ggplot(data = m4, aes(x = SUPER_PATHWAY, y = samples, color = SUPER_PATHWAY)) +
+  geom_jitter(size = .25) + facet_grid(sens_res~drug) +
+  theme(axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.text.y = element_text(size = 7, family = "Helvetica"),
+        axis.text.x = element_text(size = 7, angle = -45, vjust = 1, hjust = 0, family = "Helvetica"),
+        legend.title = element_blank(),
+        plot.margin = ggplot2::margin(1,1,1,1,"mm"),
+        strip.text = element_text(size = 7, margin = ggplot2::margin(0.1,0.1,0.1,0.1,"mm"), family = "Helvetica"),
+        #strip.background = element_blank(),
+        legend.text = element_text(size = 6, family = "Helvetica"),
+        legend.position="bottom") + guides(color = F)
+
+# grid.newpage()
+# lay <- rbind(c(1,1,1,2,2,2,2,2,2),
+#              c(1,1,1,2,2,2,2,2,2))
+# plot_final = grid.arrange(p1,p2,ncol = 2, nrow = 1, layout_matrix = lay)#, widths = 2:2)
+# ggsave('dec122017_fig1D.pdf',plot_final, height = 3, width = 3.5, units = "in")
+ggsave('feb2018_fig1C.pdf',p2, height = 2.8, width = 3.5, units = "in")
+# devSVG(file = "dec122017_fig1D.svg", width = 3.5, height = 3,xmlHeader = T)
+# plot(plot_final)
+# dev.off()
+
+```
+
+``` {r}
+rm(m, m2,m4, m5)
+
+raw1 = prep_raw(raw_file_comp1)
+identifiers = prep_sample_identifiers(raw1)
+melted = melt(raw1); melted_na = na.omit(melted); tab = table(melted_na$variable)
+print(tab)
+
+measured_mets = as.data.frame(matrix(NA,nrow = 20, ncol = 1)); i = 1
+for (x in tab) {
+  measured_mets[i,1] = x
+  rownames(measured_mets)[i] = rownames(tab)[i]
+  i = i+1 }
+
+df_for_cor = identifiers[c(3,5,6,9),]; colnames(df_for_cor) = identifiers[3,]
+df1 = as.data.frame(t(df_for_cor)); df2 = as.data.frame(tab); rownames(df2) = df2$Var1
+df_for_cor = merge(df1, df2, by = "row.names")
+df_for_cor$CLIENT_IDENTIFIER = NULL; df_for_cor$Var1 = NULL
+rownames(df_for_cor) = df_for_cor$Row.names; df_for_cor = df_for_cor[,-c(1)]
+
+indx = sapply(df_for_cor, is.factor)
+df_for_cor[indx] = lapply(df_for_cor[indx], function(x) as.character(x))
+indx = sapply(df_for_cor, is.character)
+df_for_cor[indx] = lapply(df_for_cor[indx], function(x) as.numeric(x))
+
+cor_df = cor(df_for_cor)
+print(cor_df)
+c = cor.test(df_for_cor$Freq, df_for_cor$DSDNA_ASSAY, alternative = c("two.sided"), method = c("pearson"))
+print('p value for correlation between # mets detected and DNA')
+print(c$p.value)
+print('correlation between # mets detected and DNA')
+print(c$estimate)
+rm(raw1,df_for_cor,melted,melted_na,identifiers,df1,df2,cor_df)
+
+```
+
+4 Plot parasite/DNA/Protein for Fig 2C
+```{r}
+
+raw1 = prep_raw(raw_file_comp1)
+identifiers = prep_sample_identifiers(raw1)
+
+# process sample data for plotting
+df = identifiers[c(3,5,6,8,9),] # keep only protein, dna, parasite measures and IDS
+
+df = as.data.frame(t(df)) # transpose
+rownames(df) = df$CLIENT_IDENTIFIER; df$CLIENT_IDENTIFIER = NULL
+indx = sapply(df, is.factor); df[indx] = lapply(df[indx], function(x) as.character(x)) 
+df$CLIENT_PROTEIN = as.numeric(df$CLIENT_PROTEIN); df$DSDNA_ASSAY = as.numeric(df$DSDNA_ASSAY)
+df$TOTAL_PARASITES = as.numeric(df$TOTAL_PARASITES)
+
+df = merge(df, measured_mets, by = 'row.names'); rownames(df) = df$Row.names; df$Row.names = NULL
+colnames(df)[5] = 'measured_mets'
+
+df = mutate(df, 
+            treated = ifelse(grepl('_UE',df$GROUP_ID),'untreated','treated'),
+            group = ifelse(grepl('Res1',df$GROUP_ID),'group 1','group2'))
+
+df = mutate(df,
+            measured_mets_scaled = measured_mets/mean(measured_mets),
+            CLIENT_PROTEIN_scaled = CLIENT_PROTEIN/mean(CLIENT_PROTEIN),
+            TOTAL_PARASITES_scaled = TOTAL_PARASITES/mean(TOTAL_PARASITES))
+  
+corr_eqn_r <- function(x,y, digits = 4) { corr_coef = round(cor(x, y), digits = digits)
+  paste("italic(r) == ", corr_coef) }
+corr_eqn_p <- function(x,y, digits = 4) { p_value = round(cor.test(x,y)$p.value, digits = digits)
+  paste("italic(pvalue) == ", format(p_value, scientific=FALSE)) }
+
+# plot parasite #, dna amount, and protein amount NOTE LOG10 AXIS
+summary = ggplot(df, aes(x = TOTAL_PARASITES, y = DSDNA_ASSAY)) +
+  custom_theme_pca + theme(plot.margin = unit(c(1,1,1,1),"mm"),
+                        axis.text.y = element_blank(),
+                        axis.ticks = element_blank(),
+                        axis.title = element_text(family = "Helvetica")) +
+  geom_smooth(colour = "black", fill = "gray", method = "lm") +
+  geom_point(size=2, aes(color = CLIENT_PROTEIN)) + 
+  scale_colour_gradient("Protein \nAmount", low="lightgrey", high="black",
+                        breaks = c(50,110,161), limits = c(50,161),
+                        labels=c("60","","160")) +
+ scale_shape(NULL) +
+  scale_y_log10() + scale_x_log10() +
+  xlab("Parasite number") + ylab("dsDNA quantification") 
+summary
+s = summary + guides(shape = F, color = F)
+
+# ggsave('fig_1c_sample_characteristics_dec2017.pdf', s, width = 1.75, height = 3, units = "in")
+df_test = df[,c(1,2,4,5)]; colnames(df_test) = c('protein','dsDNA','parasite count','metabolites')
+df_test2 = melt(df_test, id.vars = c('dsDNA'))
+plot_final = ggplot(df_test2, aes(x = dsDNA, y = value, color = variable)) + geom_point(size =2) +
+  scale_color_manual(values = c("black","darkblue","darkred")) +
+  facet_wrap(~variable, scales = "free_y") +
+  geom_smooth(fill = "gray", method = "lm") +
+  custom_theme_pca + theme(plot.margin = unit(c(1,1,1,1),"mm"), 
+                           axis.text.y = element_blank(),
+                           axis.ticks = element_blank(), 
+                           axis.title = element_text(family = "Helvetica"),
+                           panel.spacing.x = unit(.1, "lines")) +
+  xlab("dsDNA") + ylab(NULL) + guides(color = F)
+
+ggsave('jan092018_fig2B.pdf',plot_final, height = 3, width = 4, units = "in")
+
+
+# devSVG(file = "fig_1c_sample_characteristics_dec2017.svg", width = 1.75, height = 3, xmlHeader = T)
+# s
+# dev.off()
+
+rm(raw1,identifiers,df,indx,s,summary,tab)
+
+```
+
+5 Check to see if median and SD scale (Bias requires log transformation) 
+```{r}
+
+raw1 = prep_raw(raw_file_comp1)
+identifiers = prep_sample_identifiers(raw1) 
+raw2 = remove_NAs(raw1)
+raw3 = as.matrix(imputing_missing(raw2,0))
+
+# scale to median (so all metabolite abundances hover around 1)
+df = as.data.frame(raw3); df$mets = rownames(df)
+df = mutate(df, med = apply(df[,-c(21)],1,median), stand_dev = apply(df[,-c(21)],1,sd))
+df2 = df[,c(21:23)] # keep just median and SD
+
+df2= df2[order(df2$med,df2$stand_dev),]
+p1 = ggplot(data = df2, aes(x = med, y = stand_dev)) + geom_point() + 
+  scale_x_log10() + scale_y_log10() + geom_smooth(method = 'loess') + 
+  xlab('Median') + ylab('SD') + 
+  theme(axis.text = element_blank(), axis.ticks = element_blank()) +
+  ggtitle("Median & Variance scale (common bias in Mass Spec)")
+
+# repeat with logged data
+df = as.data.frame(log2(raw3));df$mets = rownames(df)
+df = mutate(df, log_med = apply(df[,-c(21)],1,median), log_stand_dev = apply(df[,-c(21)],1,sd))
+df2 = df[,c(21:23)] # keep just median and SD
+
+df2= df2[order((df2$log_med),(df2$log_stand_dev)),]
+p2 = ggplot(data = df2, aes(x = log_med, y = log_stand_dev)) + geom_point() + 
+  scale_x_log10() + scale_y_log10() + geom_smooth(method = 'loess') + 
+  xlab('Median') + ylab('SD') + theme(axis.text = element_blank(), axis.ticks = element_blank(), axis.title = element_text(family = "Helvetica")) +
+  ggtitle("Bias removed: Median & Variance no longer scale\n note: log scale data from now on")
+
+grid.newpage()
+lay <- rbind(c(1,1),
+             c(2,2))
+plot_final = grid.arrange(p1,p2,ncol = 1, nrow = 2, layout_matrix = lay)#, widths = 2:2)
+ggsave('feb3018_suppl1.pdf',plot_final, height = 6, width = 6.875, units = "in")
+# devSVG(file = "dec122017_suppl1.svg", width = 6.875, height = 6,xmlHeader = T)
+# plot(plot_final)
+# dev.off()
+
+rm(df,df2, raw1, raw2, raw3,identifiers)
+
+```
+
+Notes to self: Check Aug1 file for history of changes 
+Aug 9 has correlation plots and exploration of median v mean centering, removal of outliers
+Oct drops troph stage samples
+
+6 Preprocess data 
+```{r}
+
+raw1 = prep_raw(raw_file_comp1) # adjust formating
+identifiers = prep_sample_identifiers(raw1) # extract relevant samples
+raw_remove_NAs = remove_NAs(raw1) # check no nondetected metabolites due to subset
+no_missing_data = imputing_missing(raw_remove_NAs, 0) #imput missing values
+
+labels_clone = c("S1","S1","S1","S1","S1",
+            "S1","S1","S1","S1","S1",
+            "S2","S2","S2","S2","S2",
+            "S2","S2","S2","S2","S2")
+labels_drug = c("S1","S1","S1","S1","S1",
+            "S2","S2","S2","S2","S2",
+            "S1","S1","S1","S1","S1",
+            "S2","S2","S2","S2","S2")
+
+# Sample normalization
+norm_dna = normalize(no_missing_data,identifiers,"dna") # DNA NORMALIZATION
+norm_pro = normalize(no_missing_data,identifiers,"protein") # PROTEIN NORMALIZATION
+norm_para = normalize(no_missing_data,identifiers,"para") # PARASITE NUMBER NORMALIZATION
+
+# Feature normalization (log, center, scale)
+# log
+log_nonorm = log2(no_missing_data)
+log_dna = log2(norm_dna)
+log_pro = log2(norm_pro)
+log_para = log2(norm_para)
+# prep format for PCA
+data_transposed_unnorm = t(log_nonorm)
+data_transposed_dna = t(log_dna) 
+data_transposed_pro = t(log_pro)
+data_transposed_para = t(log_para)
+# [median] center & [sd] scale
+data_for_pca_unnorm = median_center_scale_data(data_transposed_unnorm) 
+data_for_pca_dna = median_center_scale_data(data_transposed_dna) 
+data_for_pca_pro = median_center_scale_data(data_transposed_pro) 
+data_for_pca_para = median_center_scale_data(data_transposed_para) 
+
+rm(raw1,identifiers,raw_remove_NAs,no_missing_data,data_transposed_unnorm,data_transposed_dna,data_transposed_para,data_transposed_pro,log_pro,log_para,log_dna,log_nonorm,norm_para,norm_pro,norm_dna,raw_file_comp1)
+
+```
+
+7 Plot HEPES and Phenol Red boxplots
+```{r}
+
+list_o_data = list(data_for_pca_unnorm,data_for_pca_dna,data_for_pca_pro,data_for_pca_para)
+
+for (x in 1:4) {
+  data = as.data.frame(list_o_data[[x]])
+  if (x == 1) { title = 'Unnormalized'}
+  else if (x == 2) {title = 'Normalized to DNA'}
+  else if (x == 3) {title = 'Normalized to Protein'}
+  else { title = 'Normalized to Parasite Number'}
+  p = data %>%
+    mutate(group = ifelse(grepl('PUR',rownames(data)),'Sensitive','Resistant'),
+           treated = ifelse(grepl('plus',rownames(data)),'treated','untreated')) %>%
+    group_by(group, treated) %>%
+    summarize(mean=mean(HEPES), sd=sd(HEPES)) %>%
+    mutate( grouping = paste(group,treated)) %>%
+    ggplot(aes(x = as.factor(grouping), color = treated)) +
+    geom_boxplot(aes(
+      lower = mean - sd, 
+      upper = mean + sd, 
+      middle = mean, 
+      ymin = mean - 3*sd, 
+      ymax = mean + 3*sd),
+    stat = "identity") + #ggtitle(paste('HEPES abundance, ',title)) +
+    ggtitle('HEPES') +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(family = "Helvetica"),
+          axis.text.x = element_blank(),
+          axis.text.y = element_text(size = 6),
+          axis.ticks = element_blank(),
+          strip.text = element_text(size = 6, family = "Helvetica"),
+          title = element_text(size = 7, family = "Helvetica"),
+          panel.grid.minor = element_blank()) + guides(color = FALSE) +
+    facet_wrap(~group, scales = "free_x") + scale_y_continuous(limits = c(-6, 6))
+  #print(p)
+  if (x == 1) {p1 = p}}
+
+list_o_data = list(data_for_pca_unnorm,data_for_pca_dna,data_for_pca_pro,data_for_pca_para)
+for (x in 1:4) {
+  data = as.data.frame(list_o_data[[x]])
+  if (x == 1) { title = 'Unnormalized'}
+  else if (x == 2) {title = 'Normalized to DNA'}
+  else if (x == 3) {title = 'Normalized to Protein'}
+  else { title = 'Normalized to Parasite Number'}
+  p = data %>%
+    mutate(group = ifelse(grepl('PUR',rownames(data)),'Sensitive','Resistant'),
+           treated = ifelse(grepl('plus',rownames(data)),'treated','untreated')) %>%
+    group_by(group, treated) %>%
+    summarize(mean=mean(phenolred), sd=sd(phenolred)) %>%
+    mutate( grouping = paste(group,treated)) %>%
+    ggplot(aes(x = as.factor(grouping), color = treated)) +
+    geom_boxplot(aes(
+      lower = mean - sd, 
+      upper = mean + sd, 
+      middle = mean, 
+      ymin = mean - 3*sd, 
+      ymax = mean + 3*sd),
+    stat = "identity") + 
+    ggtitle('Phenol Red') +
+    #ggtitle(paste('Phenol Red abundance, ',title)) +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_text(family = "Helvetica"),
+          axis.text.x = element_blank(),
+          axis.ticks = element_blank(),
+          strip.text = element_text(size = 6),
+          title = element_text(size = 7,family = "Helvetica"),
+          axis.text.y = element_text(size = 6,family = "Helvetica"),
+          panel.grid.minor = element_blank()) + guides(color = FALSE)+
+    facet_wrap(~group, scales = "free_x")  + scale_y_continuous(limits = c(-6, 6))
+  #print(p)
+  if (x == 1) {p2 = p}}
+
+grid.newpage()
+lay <- rbind(c(1,2),
+             c(1,2))
+plot_final = grid.arrange(p1,p2,ncol = 2, nrow = 1, layout_matrix = lay)#, widths = 2:2)
+ggsave('feb2018_suppl2.pdf',plot_final, width = 2.237, height = 2, units = "in") 
+# devSVG(file = "dec122017_suppl2.svg", width = 2.237, height = 2, xmlHeader = T)
+# plot(plot_final)
+# dev.off()
+
+rm(p,x,title,data)
+
+```
+
+8 Plot heatmap of correlation to HEPES and Phenol Red 
+```{r}
+
+# HEPES
+cor_mat = c(); cor_mat_count = c()
+for (x in 1:4) {
+  data = as.data.frame(list_o_data[[x]])
+  cor_mat_temp = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(data)))
+  for (y in 1:ncol(data)) {
+    cor_data = cor.test(data$HEPES,data[,y], alternative = c("two.sided"), method = c("pearson"))
+    cor_r = cor_data$estimate
+    cor_p = cor_data$p.value
+    colnames(cor_mat_temp)[y] = colnames(data)[y]
+    cor_mat_temp[1,y] = cor_r
+    cor_mat_temp[2,y] = cor_p }
+  cor_mat_temp[2,] = p.adjust(cor_mat_temp[2,], method = "fdr")
+  for (i in 1:ncol(cor_mat_temp)) {
+    if (cor_mat_temp[2,i] > 0.05) {
+      cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA } # if significant p value
+    else if (abs(cor_mat_temp[1,i]) < 0.5) {
+      cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA } } # if notable correlation coefficient
+  cor_mat[[x]] = cor_mat_temp
+  cor_mat_count[[x]] = cor_mat_temp[colSums(!is.na(cor_mat_temp)) > 0] }
+
+rm(x,y,cor_p,cor_r,cor_mat_temp,cor_data)
+
+for (x in 1:4) {
+      # prep labels
+  if (x == 1) { 
+    title = 'Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } 
+  print(paste(title, '- mets correlated to HEPES'))
+  print(dim(cor_mat_count[[x]])[2])}
+
+heatmap_matrix = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(cor_mat[[2]])))
+for (x in 1:4) {
+    if (x == 1) { 
+      title = ' Unnormalized'
+    } else if (x == 2) {
+      title = 'DNA'
+    } else if (x == 3) {
+      title = 'Protein'
+    } else {
+      title = 'Parasite Number' } 
+  df = as.data.frame(cor_mat[[x]][1,])
+  heatmap_matrix = rbind(heatmap_matrix,df)
+  rownames(heatmap_matrix)[x] = title
+}
+df = heatmap_matrix %>% mutate(norm_approach = rownames(heatmap_matrix)) %>% melt(id.vars = c("norm_approach"))
+
+mets_to_correct_prep = df[df$norm_approach == ' Unnormalized',]
+mets_to_correct_hepes = unique(mets_to_correct_prep[(mets_to_correct_prep$value) > 0.5,2])
+count_cor = df[!is.na(df$value),]; table(count_cor$norm_approach)
+rm(i, mets_to_correct_prep,heatmap_matrix,data,count_cor,cor_mat,cor_mat_count,x,title,title2)
+  
+df$variable = sub('Isobar:fructose16-diphosphateglucose16-diphosphatemyo-inositol14or13-diphosphate','fructose/glucosePP or myoinositolPP',df$variable)
+df$variable = sub("adenosine5\\'-monophosphate\\(AMP\\)",'AMP',df$variable)
+df$variable = sub("cytidine5'-monophosphate\\(5\\'-CMP\\)","5'-CMP",df$variable)
+df$variable = sub("uridine5\\'\\-diphosphate\\(UDP\\)",'UDP',df$variable)
+df$variable = sub("palmitoylsphingomyelin\\(d18\\:1\\/16\\:0\\)",'palmitoyl sphingomyelin',df$variable)
+df$variable = sub("N\\-palmitoyl\\-sphingosine\\(d18\\:1\\/16\\:0\\)",'palmitoyl sphingosine',df$variable)
+df$variable = sub("lactosyl\\-N\\-palmitoyl\\-sphingosine",'lactosyl palmitoyl sphingosine',df$variable)
+df$variable = sub("glutathioneoxidized\\(GSSG\\)",'glutathione, oxidized',df$variable)
+df$variable = sub("glutathionereduced\\(GSH\\)",'glutathione, reduced',df$variable)
+df$variable = sub("eicosapentaenoate\\(EPA\\;20\\:5n3\\)",'eicosapentaenoate',df$variable)
+df$variable = sub("gamma-aminobutyrate\\(GABA\\)",'GABA',df$variable)
+df$variable = sub("1-stearoyl-GPS\\(18\\:0\\)\\*","1-stearoyl-GPS",df$variable)
+df$variable = sub("pyridoxine\\(VitaminB6\\)","pyridoxine",df$variable)
+df$variable = sub("glycerol3-phosphate","glycerol 3-phosphate",df$variable)
+df$variable = sub("phenolred","phenol red",df$variable)
+df$variable = sub("aconitate\\[cisortrans\\]","aconitate",df$variable)
+df$variable = sub("cytidinediphosphate","cytidine diphosphate",df$variable)
+df$variable = sub("methioninesulfoxide","methionine sulfoxide",df$variable)
+df$variable = sub("cysteine-glutathionedisulfide","cysteine glutathione disulfide",df$variable)
+df$variable = sub("1-stearoyl-2-arachidonoyl-GPS\\(18:0\\/20:4\\)",'1-stearoyl-2-arachidonoyl-GPS',df$variable)
+df$variable = sub("1-stearoyl-2-arachidonoyl-GPE\\(18:0/20:4\\)","1-stearoyl-2-arachidonoyl-GPE",df$variable)
+df$variable = sub("1-arachidonoyl-GPE\\(20\\:4n6\\)\\*",'1-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-stearoyl\\)-2-oleoyl-GPE\\(P-18\\:0\\/18\\:1\\)","1-(1-enyl-stearoyl)-2-oleoyl-GPE",df$variable)
+df$variable = sub("1-\\(1-enyl-stearoyl\\)-2-arachidonoyl-GPE\\(P-18:0\\/20:4\\)\\*",'1-(1-enyl-stearoyl)-2-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-arachidonoyl-GPE\\(P-16:0\\/20:4\\)\\*",'1-(1-enyl-palmitoyl)-2-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-linoleoyl-GPE\\(P-16:0\\/18:2\\)\\*",'1-(1-enyl-palmitoyl)-2-linoleoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-oleoyl-GPE\\(P-16:0\\/18:1\\)\\*",'1-(1-enyl-palmitoyl)-2-oleoyl-GPE',df$variable)
+
+unnorm_only = df[df$norm_approach == ' Unnormalized',]
+unnorm_only = na.omit(unnorm_only); unnorm_only = unnorm_only[unnorm_only$value>0.5,]
+unnorm_only = unnorm_only[unnorm_only$variable != "HEPES",]
+
+unnorm_cluster = as.data.frame(unnorm_only[,c(2,3)]); rownames(unnorm_cluster) = unnorm_cluster$variable
+order_mets = unnorm_cluster[order(unnorm_cluster$value),1]
+
+df2 = subset(df, df$variable %in% unnorm_only$variable)
+df2 = df2 %>% mutate(variable = factor(variable), 
+                     variable = factor(variable, levels = (order_mets)))
+x = ggplot(df2) + geom_tile(aes(x = as.factor(variable), y = norm_approach, fill = value))+
+  scale_fill_gradientn(limits = c(0,1),
+  colours=c("navyblue", "blue", "red"),
+  breaks=c(0,0.9,1), labels=format(c(0,0.9,1))) + coord_flip() +
+  theme(axis.text.x = element_text(size = 6, angle = -45, hjust = 1, vjust = 1, family = "Helvetica"), 
+        axis.text.y = element_text(size = 6,family = "Helvetica"), 
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) +
+  ggtitle(NULL) + guides(fill = FALSE) + scale_y_discrete(position = "top")
+x
+
+ggsave('fig_Xb_feb2018.pdf', x, width = 2.4, height = 7, units = "in")
+# devSVG(file = "fig_Xb_dec2017.svg", width = 2.4, height = 7, xmlHeader = T)
+# x
+# dev.off()
+
+rm(unnorm_only,df)
+#Def need to filter because peaks are maintained from unnorm to everything else
+
+# PHENOL RED
+cor_mat = c(); cor_mat_count = c()
+for (x in 1:4) {
+  data = as.data.frame(list_o_data[[x]])
+  cor_mat_temp = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(data)))
+  for (y in 1:ncol(data)) {
+    cor_data = cor.test(data$phenolred,data[,y], alternative = c("two.sided"), method = c("pearson"))
+    cor_r = cor_data$estimate
+    cor_p = cor_data$p.value
+    colnames(cor_mat_temp)[y] = colnames(data)[y]
+    cor_mat_temp[1,y] = cor_r
+    cor_mat_temp[2,y] = cor_p }
+  cor_mat_temp[2,] = p.adjust(cor_mat_temp[2,], method = "fdr")
+  for (i in 1:ncol(cor_mat_temp)) {
+    if (cor_mat_temp[2,i] > 0.05) {
+      cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA }
+    else if (abs(cor_mat_temp[1,i]) < 0.5) {
+      cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA } }
+  cor_mat[[x]] = cor_mat_temp
+  cor_mat_count[[x]] = cor_mat_temp[colSums(!is.na(cor_mat_temp)) > 0] }
+
+rm(x,y,cor_p,cor_r,cor_mat_temp,cor_data)
+
+for (x in 1:4) {
+      # prep labels
+  if (x == 1) { 
+    title = ' Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } 
+  print(paste(title, '- mets correlated to Phenol Red'))
+  print(dim(cor_mat_count[[x]])[2])}
+
+heatmap_matrix = as.data.frame(matrix(NA, nrow = 0, ncol = ncol(cor_mat[[2]])))
+for (x in 1:4) {
+    if (x == 1) { 
+      title = ' Unnormalized'
+    } else if (x == 2) {
+      title = 'DNA'
+    } else if (x == 3) {
+      title = 'Protein'
+    } else {
+      title = 'ParasiteNumber' } 
+  df = as.data.frame(cor_mat[[x]][1,])
+  heatmap_matrix = rbind(heatmap_matrix,df)
+  rownames(heatmap_matrix)[x] = title
+}
+df = heatmap_matrix %>% mutate(norm_approach = rownames(heatmap_matrix)) %>% melt(id.vars = c("norm_approach"))
+
+mets_to_correct_prep_pr = df[df$norm_approach == ' Unnormalized',]
+mets_to_correct_phenolred = unique(mets_to_correct_prep_pr[(mets_to_correct_prep_pr$value) > 0.5,2])
+count_cor = df[!is.na(df$value),]; table(count_cor$norm_approach)
+
+rm(i,heatmap_matrix,data,count_cor,cor_mat,cor_mat_count,x,title,title2)
+
+df$variable = sub('Isobar:fructose16-diphosphateglucose16-diphosphatemyo-inositol14or13-diphosphate','fructose/glucosePP or myoinositolPP',df$variable)
+df$variable = sub("adenosine5\\'-monophosphate\\(AMP\\)",'AMP',df$variable)
+df$variable = sub("cytidine5'-monophosphate\\(5\\'-CMP\\)","5'-CMP",df$variable)
+df$variable = sub("uridine5\\'\\-diphosphate\\(UDP\\)",'UDP',df$variable)
+df$variable = sub("palmitoylsphingomyelin\\(d18\\:1\\/16\\:0\\)",'palmitoyl sphingomyelin',df$variable)
+df$variable = sub("N\\-palmitoyl\\-sphingosine\\(d18\\:1\\/16\\:0\\)",'palmitoyl sphingosine',df$variable)
+df$variable = sub("lactosyl\\-N\\-palmitoyl\\-sphingosine",'lactosyl palmitoyl sphingosine',df$variable)
+df$variable = sub("glutathioneoxidized\\(GSSG\\)",'glutathione, oxidized',df$variable)
+df$variable = sub("glutathionereduced\\(GSH\\)",'glutathione, reduced',df$variable)
+df$variable = sub("eicosapentaenoate\\(EPA\\;20\\:5n3\\)",'eicosapentaenoate',df$variable)
+df$variable = sub("gamma-aminobutyrate\\(GABA\\)",'GABA',df$variable)
+df$variable = sub("1-stearoyl-GPS\\(18\\:0\\)\\*","1-stearoyl-GPS",df$variable)
+df$variable = sub("pyridoxine\\(VitaminB6\\)","pyridoxine",df$variable)
+df$variable = sub("glycerol3-phosphate","glycerol 3-phosphate",df$variable)
+df$variable = sub("phenolred","phenol red",df$variable)
+df$variable = sub("aconitate\\[cisortrans\\]","aconitate",df$variable)
+df$variable = sub("cytidinediphosphate","cytidine diphosphate",df$variable)
+df$variable = sub("methioninesulfoxide","methionine sulfoxide",df$variable)
+df$variable = sub("cysteine-glutathionedisulfide","cysteine glutathione disulfide",df$variable)
+df$variable = sub("1-stearoyl-2-arachidonoyl-GPS\\(18:0\\/20:4\\)",'1-stearoyl-2-arachidonoyl-GPS',df$variable)
+df$variable = sub("1-stearoyl-2-arachidonoyl-GPE\\(18:0/20:4\\)","1-stearoyl-2-arachidonoyl-GPE",df$variable)
+df$variable = sub("1-arachidonoyl-GPE\\(20\\:4n6\\)\\*",'1-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-stearoyl\\)-2-oleoyl-GPE\\(P-18\\:0\\/18\\:1\\)","1-(1-enyl-stearoyl)-2-oleoyl-GPE",df$variable)
+df$variable = sub("1-\\(1-enyl-stearoyl\\)-2-arachidonoyl-GPE\\(P-18:0\\/20:4\\)\\*",'1-(1-enyl-stearoyl)-2-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-arachidonoyl-GPE\\(P-16:0\\/20:4\\)\\*",'1-(1-enyl-palmitoyl)-2-arachidonoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-linoleoyl-GPE\\(P-16:0\\/18:2\\)\\*",'1-(1-enyl-palmitoyl)-2-linoleoyl-GPE',df$variable)
+df$variable = sub("1-\\(1-enyl-palmitoyl\\)-2-oleoyl-GPE\\(P-16:0\\/18:1\\)\\*",'1-(1-enyl-palmitoyl)-2-oleoyl-GPE',df$variable)
+df$variable = sub("phosphoenolpyruvate\\(PEP\\)",'phosphoenolpyruvate',df$variable)
+df$variable = sub("adenosine5\\'-diphosphoribose\\(ADP-ribose\\)",'ADP-ribose',df$variable)
+df$variable = sub("uridine5\\'-monophosphate\\(UMP\\)",'UMP',df$variable)
+df$variable = sub("S-adenosylhomocysteine\\(SAH\\)",'S-adenosylhomocysteine',df$variable)
+df$variable = sub("inosine5\\'-monophosphate\\(IMP\\)",'IMP',df$variable)
+
+unnorm_only = df[df$norm_approach == ' Unnormalized',]; unnorm_only = na.omit(unnorm_only); unnorm_only = unnorm_only[unnorm_only$value>0.5,];
+unnorm_only = unnorm_only[unnorm_only$variable != "phenol red",]
+
+unnorm_cluster = as.data.frame(unnorm_only[,c(2,3)]); rownames(unnorm_cluster) = unnorm_cluster$variable
+order_mets = unnorm_cluster[order(unnorm_cluster$value),1]
+
+df2 = subset(df, df$variable %in% unnorm_only$variable)
+df2 = df2 %>% mutate(variable = factor(variable), 
+                     variable = factor(variable, levels = (order_mets)))
+x = ggplot(df2) + geom_tile(aes(x = as.factor(variable), y = norm_approach, fill = value))+
+  scale_fill_gradientn(limits = c(0,1),
+  colours=c("navyblue", "blue", "red"),
+  breaks=c(0,0.9,1), labels=format(c(0,0.9,1))) + coord_flip() +
+  theme(axis.text.x = element_text(size = 6, angle = -45, hjust = 1, vjust = 1,family = "Helvetica"), 
+        axis.text.y = element_text(size = 6,family = "Helvetica"), 
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) +
+  ggtitle(NULL) + guides(fill = FALSE) + scale_y_discrete(position = "top")
+x
+
+ggsave('fig_2e_feb2018.pdf', x, width = 2.4, height = 7, units = "in")
+# devSVG(file = "fig_2e_dec2017.svg", width = 2.4, height = 7, xmlHeader = T)
+# x
+# dev.off()
+
+rm(unnorm_only,df, mets_to_correct_prep_pr)
+
+```
+
+10 Princple Component Analysis without NORMALIZATION
+```{r}
+
+pca_data <- prcomp(data_for_pca_unnorm, center = F, scale. = F)
+summary(pca_data)
+data_plot = data.frame(pca_data$x[,c(1,2)]) # Adjust for plotting
+
+metadata = as.data.frame(rownames(pca_data$x)) %>% 
+    mutate(sample = rownames(pca_data$x), treatment = ifelse(grepl('minus',sample),"untreated","treated"),
+           clone = ifelse(grepl('BAT',sample),"resistant","sensitive")); metadata[,1] = NULL
+
+t = adonis(data_plot ~ treatment*clone, data = metadata, method = "eu") # PerMANOVA
+print(t)
+
+unscaled = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels_clone), 
+                 color = factor(labels_drug),
+                 size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17,18,9)) +
+  theme(plot.margin = unit(c(1,1,1,0),"mm"), title = element_text(family = "Helvetica"),
+        axis.text = element_text(family = "Helvetica")) + # top, right, bottom, and left 
+  ggtitle("No normalization,\ntreatment p-value = NS\nclone p-value = NS\nboth p-value = NS") + ylab(paste("PC2",get_2nd(pca_data),sep = " ")) + xlab(paste("PC1",get_1st(pca_data),sep = " ")) 
+
+ggsave('fig_2d_no_norm_jan2018.pdf', unscaled, width = 2.237, height = 2, units = "in")
+# devSVG(file = "fig_2d_no_norm_dec2017.svg", width = 2.237, height = 2, xmlHeader = T)
+# unscaled
+# dev.off()
+
+rotation_a = pca_data$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t = c(); t$PC1_no_norm = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_no_norm = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(pca_data,data_plot,rotation_a,x)
+
+```
+
+11 Now explore normalization methods
+```{r}
+
+# PCA for DNA NORMALIZATION
+pca_dna <- prcomp(data_for_pca_dna, center = F, scale. = F)
+summary(pca_dna)
+
+data_plot = data.frame(pca_dna$x[,c(1,2)])
+
+t1 = adonis(data_plot ~ treatment*clone, data = metadata, method = "eu") # PerMANOVA
+t1
+
+dna = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels_clone), 
+                 color = factor(labels_drug), size=I(2), show.legend = FALSE, alpha = .9) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17,18,9)) + 
+  theme(plot.margin = unit(c(1,3,1,1),"mm"), title = element_text(family = "Helvetica"),
+        axis.text = element_text(family = "Helvetica")) + # top, right, bottom, and left
+  ggtitle("Normalization: DNA,\ntreatment p-value < 0.05\nclone p-value < 0.05\nboth p-value = NS") + ylab(paste("PC2",get_2nd(pca_dna),sep = " ")) + xlab(paste("PC1",get_1st(pca_dna),sep = " "))
+
+ggsave('fig_2d_dna_norm_jan2018.pdf', dna,width = 2.237, height = 2, units = "in")
+# devSVG(file = "fig_2d_dna_norm_dec2017.svg", width = 2.237, height = 2, xmlHeader = T)
+# dna
+# dev.off()
+
+rotation_a = pca_dna$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_dna = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_dna = names(tail(sort(abs(rotation_a[,2])),10))
+rm(data_plot,pca_dna, rotation_a)
+
+# Princple Component Analysis for PARASITE NUMBER NORMALIZATION
+pca_para <- prcomp(data_for_pca_para, center = F, scale. = F)
+summary(pca_para)
+
+data_plot = data.frame(pca_para$x[,c(1,2)])
+
+t2 = adonis(data_plot ~ treatment*clone, data = metadata, method = "eu") # PerMANOVA
+t2
+
+para = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels_clone), 
+                 color = factor(labels_drug), size=I(2), show.legend = FALSE,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17,18,9)) +
+  theme(plot.margin = unit(c(1,1,1,0),"mm"), title = element_text(family = "Helvetica"),
+        axis.text = element_text(family = "Helvetica")) +
+  ggtitle("Normalization: Parasite number,\ntreatment p-value = NS\nclone p-value < 0.05\nboth p-value = NS") + ylab(paste("PC2",get_2nd(pca_para),sep = " ")) + xlab(paste("PC1",get_1st(pca_para),sep = " "))
+
+ggsave('fig_2d_para_norm_jan2018.pdf', para, width = 2.237, height = 2, units = "in")
+# devSVG(file = "fig_2d_para_norm_dec2017.svg", width = 2.237, height = 2, xmlHeader = T)
+# para
+# dev.off()
+
+rotation_a = pca_para$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_para = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_para = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(data_plot,pca_para,rotation_a)
+
+# Princple Component Analysis for PROTEIN NORMALIZATION
+pca_pro <- prcomp(data_for_pca_pro, center = F, scale. = F) 
+summary(pca_pro) 
+
+data_plot = data.frame(pca_pro$x[,c(1,2)])
+
+
+t3 = adonis(data_plot ~ treatment*clone, data = metadata, method = "eu") # PerMANOVA
+t3
+
+pro = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels_clone), 
+                 color = factor(labels_drug), size=I(2), show.legend = F,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17,18,9))+ 
+  theme(plot.margin = unit(c(1,3,1,1),"mm"), title = element_text(family = "Helvetica"),
+        axis.text = element_text(family = "Helvetica")) +
+  ggtitle("Normalization: Protein,\ntreatment p-value = NS\nclone p-value = NS\nboth p-value = NS") + ylab(paste("PC2",get_2nd(pca_pro),sep = " ")) + xlab(paste("PC1",get_1st(pca_pro),sep = " "))
+
+ggsave('fig_2d_pro_norm_Feb2018.pdf', pro, width = 2.237, height = 2, units = "in")
+# devSVG(file = "fig_2d_pro_norm_dec2017.svg", width = 2.237, height = 2, xmlHeader = T)
+# pro
+# dev.off()
+
+rotation_a = pca_pro$rotation #loadings
+# PC 1 loadings (most important variable in PC1 in full dataset without normalization)
+t$PC1_pro = names(tail(sort(abs(rotation_a[,1])),10))
+# PC 2 loadings (most important variable in PC2 in full dataset without normalization)
+t$PC2_pro = names(tail(sort(abs(rotation_a[,2])),10))
+
+rm(rotation_a,data_plot,pca_pro)
+
+# save plot
+print(multiplot(unscaled,para,dna,pro,cols = 2))
+tiff(filename = "2abcd_pca_multi_panel_jan2018.tiff", width = 4.475, height = 5, 
+     units = "in", res = 300)
+# devSVG(file = "2abcd_pca_multi_panel_dec2017.svg", width = 4.475, height = 5, xmlHeader = T)
+# multiplot(unscaled,para,dna,pro,cols = 2)
+# dev.off()
+
+# save loadings
+write.table(as.data.frame(t), "PC_list_Feb2018.csv", sep = ',',col.names = T, row.names = F)
+
+```
+
+13 Attempt correction for metabolites correlated with HEPES or Phenol Red
+```{r}
+
+#mets_to_correct = intersect(mets_to_correct_hepes,mets_to_correct_phenolred)
+mets_to_correct = mets_to_correct_phenolred
+
+corrected_dna_norm = as.data.frame(data_for_pca_dna)
+for (x in 1:ncol(corrected_dna_norm)) {
+  if (colnames(corrected_dna_norm)[x] %in% mets_to_correct) {
+    for (i in 1:nrow(corrected_dna_norm)) {
+      corrected_dna_norm[i,x] = NA
+      } } }
+corrected_dna_norm2 = corrected_dna_norm[colSums(!is.na(corrected_dna_norm)) > 0]
+
+pca_hepes <- prcomp(corrected_dna_norm2, center = F, scale. = F) 
+summary(pca_hepes) 
+data_plot = data.frame(pca_hepes$x[,c(1,2)])
+
+t4 = adonis(data_plot ~ treatment*clone, data = metadata, method = "eu") # PerMANOVA
+t4
+
+PR = qplot(x = PC1, y = PC2, data = data_plot, shape = factor(labels_clone), 
+                 color = factor(labels_drug), size=I(2), show.legend = F,  alpha = .9 ) +
+  custom_theme_pca + scale_shape_manual(values = c(16,17,18,9))+ 
+  theme(plot.margin = unit(c(1,2,1,1),"mm"), title = element_text(family = "Helvetica"),
+        axis.text = element_text(family = "Helvetica")) +
+  ggtitle("Normalization: DNA/Phenol Red,\ntreatment p-value < 0.05\nclone p-value < 0.05\nboth p-value = NS") + ylab(paste("PC2",get_2nd(pca_hepes),sep = " ")) + xlab(paste("PC1",get_1st(pca_hepes),sep = " "))
+
+ggsave('fig_2f_2018.pdf', PR, width = 2.237, height = 2, units = "in")
+# devSVG(file = "fig_2f_2017.svg", width = 2.237, height = 2, xmlHeader = T)
+# PR
+# dev.off()
+
+# print(multiplot(unscaled,dna,para,pro,hepes2, cols = 5))
+rm(unscaled,dna,para,pro,t,pca_hepes,mets_to_correct_hepes,mets_to_correct_phenolred,corrected_dna_norm,data_plot)
+
+```
+
+14 Calculate FC
+```{r}
+
+data_list = c(t(data_for_pca_unnorm),t(data_for_pca_dna),t(data_for_pca_para),t(data_for_pca_pro),t(corrected_dna_norm2)) # metabolites as rows again
+for (x in 1:5) {
+  # calculate SD and mean
+  data = data_list[[x]]
+  j = nrow(data)
+  data2 = as.data.frame(rbind(data,c(rep(-10,5),rep(10,5),rep(-20,5),rep(20,5)))) # groups
+  j = nrow(data2); data2 = make_numeric(data2)
+  data3 = mutate(data2, met = rownames(data2),
+                 met_sd_group1_minus = apply(data2[,data2[j,] == -10], 1, sd), # SD 
+                 met_mean_group1_minus = rM(data2[,data2[j,] == -10]),
+                 met_sd_group2_minus = apply(data2[,data2[j,] == -20], 1, sd ), # SD 
+                 met_mean_group2_minus = rM(data2[,data2[j,] == -20]),
+                 met_sd_group1_plus = apply(data2[,data2[j,] == 10], 1, sd), # SD 
+                 met_mean_group1_plus = rM(data2[,data2[j,] == 10]),
+                 met_sd_group2_plus = apply(data2[,data2[j,] == 20], 1, sd ), # SD 
+                 met_mean_group2_plus = rM(data2[,data2[j,] == 20]))
+  # calc FC and signficance
+  fc_data = data3
+  #fc_data = mutate(data3,fc = met_mean_group1/met_mean_group2)
+  j = nrow(fc_data); fc_data$pval[j] = NA
+  for (i in 1:(j-1)) {
+    val = as.vector(as.numeric(fc_data[i,c(1:20)]))
+    i_result = aov(val ~as.factor(as.character(fc_data[j,c(1:20)])), data = fc_data)  # ANOVA
+    fc_data$pval[i] = summary(i_result)[[1]][["Pr(>F)"]][[1]]} # UNCORRECTED
+  
+  # Multiple testing correction
+  fc_data = mutate(fc_data, adj_pval = p.adjust(fc_data$pval, method = "fdr"))
+
+  # significant comparisons
+  significant = subset(fc_data, fc_data$adj_pval <0.05)
+
+  write.table(significant,"fc_G1_v_G2_feb2018_log.csv",sep = ',',col.names = T,row.names = T)
+  
+  if (dim(significant)[1] >= 1) {
+    hi = ggplot(data = significant) + geom_histogram(aes(significant$fc), bins = 100) +
+      #geom_vline(xintercept = 2, color = "red", size = 2) + 
+      custom_theme2 + xlab("Fold Change") + ylab(NULL)
+    # print(hi) 
+    # ggsave('distribution_FC_dec2017.pdf',hi,width = 3,height = 3) 
+    rm(hi)}
+  else {print('this comparison has no significantly differentially abundant metabolites')}}
+
+rm(significant,i,i_result,j,data,data2,data3,fc_data,x)
+
+```
+
+
+15 Comparison 2: Process blood batch data
+```{r}
+
+blood_batch = read.table("/Users/maureencarey/local_documents/work/metabolomics_methods/data/blood_batch_data.csv",sep = ',', header = T)
+blood_batch = blood_batch[-c(1:15),]; rownames(blood_batch) = NULL
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("(-)", "_minus", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("(+)", "_plus", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub("-", "_", x,fixed = TRUE)})
+blood_batch$GROUP_NUMBER = sapply(blood_batch$GROUP_NUMBER, function(x) {gsub(" ", "", x,fixed = TRUE)})
+
+rownames(blood_batch) = blood_batch$GROUP_NUMBER
+#data = as.data.frame(merge(blood_batch, data_for_pca_dna_comp2, by = 'row.names'))
+
+data_list = list(data_for_pca_unnorm,data_for_pca_dna,data_for_pca_para,data_for_pca_pro, corrected_dna_norm2)
+use_for_pca = c()
+
+for (x in 1:5) {
+  data = as.data.frame(merge(blood_batch, data_list[[x]], by = 'row.names'))
+  rownames(data) = data$Row.names;  data = data[,-c(1:3,5)]; colnames(data)[1] = 'blood'
+  use_for_pca[[x]] = make_numeric(as.data.frame(data))
+  use_for_pca[[x]]$blood = as.factor(as.character(use_for_pca[[x]]$blood)) }
+
+```
+
+16 PCA blood batch
+```{r}
+
+for (x in 1:5) {
+  # prep labels
+  if (x == 1) { 
+    title = 'Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else if (x == 4 ) {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } else {
+    title = ' Normalized to DNA and HEPES'
+    title2 = 'dna_HEPES_norm_' }
+  
+  labels_unique = rownames(use_for_pca[[x]]); substring(labels_unique, 5, 5) = "_"
+  labels_blood_batch = use_for_pca[[x]]$blood
+
+  labels_drug = lapply(rownames(use_for_pca[[x]]), 
+                      function(x) {substr(x,nchar(x)-4,nchar(x))})
+  labels_drug = unlist(labels_drug)
+  labels_drug = ifelse(labels_drug == '_plus','plus','minus')
+
+  # pca
+  pca_dna <- prcomp(use_for_pca[[x]][,-c(1)], center = F, scale. = F) 
+  summary(pca_dna)
+
+  data_plot = data.frame(pca_dna$x[,c(1:4)])
+  # extra = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+  #   geom_point(aes(color = factor(labels_blood_batch), 
+  #                  shape = factor(labels_unique)), 
+  #             size=I(4), alpha = .9) +
+  #   custom_theme3 + 
+  #   scale_shape_manual(values = c(15:18)) +
+  #   theme(plot.margin = unit(c(1,6,6,6),"mm"), # top, right, bottom, and left
+  #        legend.title = element_text(size = 12)) +
+  #   guides(color = guide_legend(title = 'Blood Batch'),
+  #          shape = guide_legend(title = 'Parasite with drug')) +
+  #   ggtitle(paste(title," blood batch v drug treatment")) + ylab("PC2") + xlab("PC1")
+  # extra
+
+  # fig_for_viewing = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+  #   geom_point(aes(color = factor(labels_blood_batch),
+  #             shape = factor(labels_drug)), 
+  #              size=I(2), alpha = .9) +
+  #   scale_shape_manual(values = c(15:16)) + 
+  #   custom_theme3 + theme( plot.margin = unit(c(1,1,1,1),"mm"),
+  #                         legend.title=element_text(size = 8),
+  #                         legend.text=element_text(size = 6),
+  #                         legend.key = element_rect(fill = NA), 
+  #                         legend.key.height = unit(4, "mm"),
+  #                         legend.key.width = unit(2, "mm"),
+  #                         legend.position = "bottom",
+  #                         legend.direction = 'vertical') +
+  #   guides(color = guide_legend(title = 'Blood\nBatch'),
+  #         shape = guide_legend(title = 'Parasite\nwith drug')) +
+  #   ggtitle(paste(title," blood batch v drug treatment")) + 
+  #  ylab("PC2") + xlab("PC1")
+  # print(fig_for_viewing)
+  
+  fig = ggplot(data_plot, aes(x = PC1, y = PC2)) + 
+    geom_point(aes(color = factor(labels_blood_batch),
+               shape = factor(labels_drug)), 
+               size=I(2), alpha = .9) +
+    scale_shape_manual(values = c(15:16)) + 
+    custom_theme3 + theme( plot.margin = unit(c(1,1,1,1),"mm")) +
+    guides(color = FALSE,shape = FALSE) + 
+    ylab("PC2") + xlab("PC1")
+  
+  ggsave(paste(title2,'blood_batch_drug_pca_feb2018.pdf'), fig, width = 60, height = 58, units = "mm") }
+  # devSVG(file = paste(title2,'blood_batch_drug_pca_dec2017.svg'), width = 2.237, height = 2, xmlHeader = T)
+  # fig
+  # dev.off() }
+
+rm(extra, fig_for_viewing,labels_unique,labels_drug,labels_blood_batch,data_plot,pca_dna,title,title2,x,val,fig,fig_for_viewing,blood_batch,data)
+# SEPARATE TO VIEW PLOTS
+```
+
+17 Predict blood batch con't (hide warnings here)
+```{r, warning= F}
+
+comparison_2_df = c()
+for (x in 1:5) {
+  comparison_2_df[[x]] = remove_characters_from_colnames(use_for_pca[[x]]) 
+  which(duplicated(colnames(comparison_2_df[[x]])))
+}
+
+if ((sum(is.na(colnames(comparison_2_df[[4]]))) + sum(is.na(colnames(comparison_2_df[[5]]))) + sum(is.na(colnames(comparison_2_df[[3]]))) + sum(is.na(colnames(comparison_2_df[[2]]))) + sum(is.na(colnames(comparison_2_df[[1]])))) > 0) {print('there are NAs, FIX')}
+
+```
+
+FC, if you aren't getting sig hits here, classification based methods will not reveal anything unless sample size is large enough for non linear effects to emerge.
+
+Distance heatmap in Aug 9 version
+
+18 Calculate Blood batch FC
+```{r}
+
+for (x in 1:5) {
+  if (x == 1) { 
+    title = 'Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else if (x == 4 ) {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } else { 
+    title = ' Normalized to DNA and HEPES'
+    title2 = 'dna_HEPES_norm_'
+  } 
+  
+  # only trying to predict blood batch 1
+  df = as.data.frame(comparison_2_df[[x]])
+  df = make_numeric(df)
+
+#   df$blood[df$blood == '2'] = '23'
+#   df$blood[df$blood == '3'] = '23'
+  scaled = make_numeric(as.data.frame(t(df)))
+
+  j = 1; data2 = make_numeric(scaled)
+  data3 = mutate(data2, met = rownames(data2),
+                 met_sd_bg1 = apply(data2[,data2[j,] == 1], 1, sd), # SD 
+                 met_mean_bg1 = rM(data2[,data2[j,] == 1]),
+                 met_sd_bg2 = apply(data2[,data2[j,] == 2], 1, sd ), # SD 
+                 met_mean_bg2 = rM(data2[,data2[j,] == 2]),
+                 met_sd_bg3 = apply(data2[,data2[j,] == 3], 1, sd), # SD 
+                 met_mean_bg3 = rM(data2[,data2[j,] == 3]))
+  # calc FC and signficance
+  fc_data = data3
+  #fc_data = mutate(data3,fc = met_mean_group1/met_mean_group2)
+  j = nrow(fc_data); fc_data$pval[j] = NA
+  for (i in 1:(nrow(fc_data)-1)) {
+    val = as.vector(as.numeric(fc_data[i,c(1:20)]))
+    i_result = aov(val ~as.factor(as.character(fc_data[1,c(1:20)])), data = fc_data)  # ANOVA
+    fc_data$pval[i] = summary(i_result)[[1]][["Pr(>F)"]][[1]]} # UNCORRECTED
+  
+  # Multiple testing correction
+  fc_data = mutate(fc_data, adj_pval = p.adjust(fc_data$pval, method = "fdr"))
+
+  # significant comparisons
+  significant = subset(fc_data, fc_data$adj_pval <0.05)
+
+  write.table(significant,paste(title2,"fc_G1_v_G2_Feb2018_log.csv"),sep = ',',col.names = T,row.names = T)
+  
+  if (dim(significant)[1] >= 1) {
+    significant$fc1 = significant$met_mean_bg1/significant$met_mean_bg2
+    significant$fc2 = significant$met_mean_bg1/significant$met_mean_bg3
+    hi = ggplot(data = significant) + geom_histogram(aes(significant$fc1), bins = 100) +
+      geom_histogram(aes(significant$fc2), bins = 100) +
+      #geom_vline(xintercept = 2, color = "red", size = 2) + 
+      custom_theme2 + xlab("Fold Change") + ylab(NULL)
+    #print(hi) 
+    }
+
+  # ggsave(paste(title2,'distribution_FC_dec2017.pdf'),hi,width = 3,height = 3)
+  # devSVG(file = paste(title2,'distribution_FC_dec2017.svg'), width = 3, height = 3, xmlHeader = T)
+  # hi
+  # dev.off()
+}
+
+rm(significant,i,df,fc_data,hi,scaled,j,i_result,data2,data3,title,title2,val,x)
+
+```
+
+19 Predict blood batch 1 : RF
+```{r}
+
+rf_blood = c()
+top = c()
+worst = c()
+top_table = c()
+worst_table = c()
+
+for (x in 1:5) {
+  if (x == 1) { 
+    title = 'Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else if (x == 4 ) {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } else { 
+    title = ' Normalized to DNA and HEPES'
+    title2 = 'dna_HEPES_norm_'
+  } 
+  # only trying to predict blood batch 1
+  df = make_numeric(as.data.frame(comparison_2_df[[x]]))
+  df$blood[df$blood == '2'] = '23'
+  df$blood[df$blood == '3'] = '23'
+  df$blood = as.factor(df$blood)
+  
+  # split into training and validation data set # NOT NEEDED FOR RF, inherent in implementation
+  varNames = names(df); varNames = varNames[!varNames %in%  c("blood")]
+  varNames1 = paste(varNames, collapse = "+")
+  formula = as.formula(paste("blood", varNames1, sep = " ~ ")) 
+  set.seed(2017)
+  rf_blood[[x]] = randomForest(formula, data = df, ntree=500, na.action = "na.omit", importance=T, classwt = c(.33,.67))   # class imbalance -> increase penalty for less abundant class
+
+  #varImpPlot(rf_blood, sort = T,main="Variable Importance for RF",n.var=10)
+  blood_imp = as.data.frame(rf_blood[[x]]$importance)
+  blood_imp = blood_imp[order(blood_imp$MeanDecreaseAccuracy),]
+  blood_imp_rf = blood_imp[,-c(1:2)]
+  top_table[[x]] = blood_imp_rf
+  top_blood_imp_rf = blood_imp_rf[(nrow(blood_imp_rf)-9):nrow(blood_imp_rf),]
+  worst_blood_imp_rf = blood_imp_rf[1:10,]
+
+  print(dim(blood_imp[blood_imp$MeanDecreaseAccuracy>0,]))
+  # print(ggplot() + geom_histogram(data=blood_imp_rf, aes(x = MeanDecreaseAccuracy), bins = 50) +ggtitle(title))
+
+  # plot top blood predictors
+  top_blood_imp_rf = mutate(top_blood_imp_rf, met = rownames(top_blood_imp_rf))
+
+  top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'uridine5diphosphateUDP')] = 'UDP'
+  top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'gammaaminobutyrateGABA')] = 'GABA'
+  top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'adenosine5diphosphoriboseADPribose')] = 'ADP-ribose'
+  top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'adenosine5monophosphateAMP')] = 'AMP'
+  top_blood_imp_rf$met[which(top_blood_imp_rf$met == 'cytidine5diphosphoethanolamine')] = 'CDP-ethanolamine'
+
+  ordr = order(top_blood_imp_rf$MeanDecreaseAccuracy)
+  top_blood_imp_rf$met <- factor(top_blood_imp_rf$met, levels = top_blood_imp_rf$met[ordr])
+
+  top[[x]] = ggplot() + theme( plot.margin = unit(c(1,1,1,1),"mm")) +
+    geom_point(data=top_blood_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +  
+    custom_theme_pca + ylab(NULL) #+
+    #ggtitle(paste(title,'metabolites most predictive of blood batch')) 
+
+  ggsave(paste(title2,'topBB_mets_feb2018.pdf'), top[[x]], width = 70, height = 50, units = "mm")
+  # devSVG(file = paste(title2,'topBB_mets_dec2017.svg'), width = 4.2, height = 3, xmlHeader = T)
+  # top[[x]]
+  # dev.off()
+  
+  #plot worst blood predictors
+  worst_blood_imp_rf = mutate(worst_blood_imp_rf, met = rownames(worst_blood_imp_rf))
+  ordr = order(worst_blood_imp_rf$MeanDecreaseAccuracy)
+  worst_blood_imp_rf$met <- factor(worst_blood_imp_rf$met, levels = worst_blood_imp_rf$met[ordr])
+  worst_table[[x]] = worst_blood_imp_rf$met
+  worst[[x]] = ggplot() + 
+    geom_point(data=worst_blood_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +
+    custom_theme_pca + ylab(NULL) #+
+    #ggtitle(paste(title,'metabolites least predictive of blood batch'))
+
+  ggsave(paste(title2,'worstBB_mets_feb2018.pdf'), worst[[x]], width = 80, height = 60, units = "mm")
+  # devSVG(file = paste(title2,'worstBB_mets_dec2017.svg'), width = 4.2, height = 3, xmlHeader = T)
+  # worst[[x]]
+  # dev.off()
+  rm(ordr, worst_blood_imp_rf, top_blood_imp_rf,blood_imp,df)
+}
+
+rm(title, title2, formula,blood_imp_rf,varNames,varNames1,x)
+```
+
+21 Unnormalized RF blood classifier results
+```{r, echo = FALSE}
+return(rf_blood[[1]])
+top[[1]]
+worst[[1]]
+```
+
+22 (DNA norm) RF blood classifier results
+```{r, echo = FALSE}
+return(rf_blood[[2]])
+top[[2]]
+worst[[2]]
+```
+
+23 (Protein norm) RF blood classifier results
+```{r, echo = FALSE}
+return(rf_blood[[3]])
+top[[3]]
+worst[[3]]
+```
+
+24 (Parasite number norm) RF blood classifier results
+```{r, echo = FALSE}
+return(rf_blood[[4]])
+top[[4]]
+worst[[4]]
+```
+
+25 (DNA and HEPES norm) RF blood classifier results
+```{r, echo = FALSE}
+return(rf_blood[[5]])
+top[[5]]
+worst[[5]]
+```
+
+25 RF blood classifier results - into table
+```{r, echo = FALSE}
+
+top_table_blood = c()
+worst_table_blood = c()
+for (x in 1:5) {
+  top_table_blood[[x]] = as.vector(rownames(top_table[[x]][top_table[[x]]$MeanDecreaseAccuracy>0,]))
+  worst_table_blood[[x]] = as.vector(rownames(top_table[[x]][top_table[[x]]$MeanDecreaseAccuracy<0,]))
+}
+consensus_important = Reduce(intersect,top_table_blood)
+consensus_bad = Reduce(intersect, worst_table_blood)
+contradictory = intersect(unlist(top_table_blood),unlist(worst_table_blood))
+
+```
+
+26 Predict sample group : RF
+```{r}
+
+rf_Drug = c()
+top = c()
+top_table = c()
+worst = c()
+worst_table = c()
+for(x in 1:5) {
+  if (x == 1) { 
+    title = 'Unnormalized'; title2 = 'unnorm_' 
+  } else if (x == 2) {
+    title = 'Normalized to DNA'
+    title2 = 'dna_norm_'
+  } else if (x == 3) {
+    title = 'Normalized to Protein'
+    title2 = 'pro_norm_'
+  } else if (x == 4 ) {
+    title = 'Normalized to Parasite Number'
+    title2 = 'para_norm_'
+  } else { 
+    title = ' Normalized to DNA and HEPES'
+    title2 = 'dna_HEPES_norm_'
+  } 
+  df = as.data.frame(comparison_2_df[[x]])
+  df = mutate(df, sample = rownames(df), drug = substr(sample, nchar(sample)-4, nchar(sample))) 
+  rownames(df) = df$sample
+  df$drug = as.factor(df$drug)
+  df$sample = NULL; df$blood = NULL
+  df[,-c(ncol(df))] = make_numeric(df[,-c(ncol(df))])
+
+  # split into training and validation data set # NOT NEEDED FOR RF, inherent in implementation
+  varNames = names(df); varNames = varNames[!varNames %in%  c("drug")]
+  varNames1 = paste(varNames, collapse = "+")
+  formula = as.formula(paste("drug", varNames1, sep = " ~ ")) 
+  set.seed(2017) # for first submission date
+  rf_Drug[[x]] = randomForest(formula, data = df, ntree=500, na.action = "na.omit", importance=T)
+
+  #varImpPlot(rf_Drug, sort = T,main="Variable Importance for RF",n.var=10)
+  drug_imp = as.data.frame(rf_Drug[[x]]$importance)
+  drug_imp = drug_imp[order(drug_imp$MeanDecreaseAccuracy),]
+  drug_imp_rf = drug_imp[,-c(1:2)]
+  top_table[[x]] = drug_imp_rf
+  top_drug_imp_rf = drug_imp_rf[(nrow(drug_imp_rf)-9):nrow(drug_imp_rf),]
+  worst_drug_imp_rf = drug_imp_rf[1:10,]
+
+  print(dim(drug_imp[drug_imp$MeanDecreaseAccuracy>0,]))
+
+  # fancier plotting 
+  #print(ggplot() + geom_histogram(data=drug_imp_rf, aes(x = MeanDecreaseAccuracy), bins = 50) + ggtitle(title))
+
+  # plot top blood predictors
+  top_drug_imp_rf = mutate(top_drug_imp_rf, met = rownames(top_drug_imp_rf))
+
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N1palmitoyl2linoleoylGPG160182')] = '1-palmitoyl 2-linoleoylGPG'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N1margaroylglycerol170')] = '1-margaroyl glycerol'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N11enylstearoyl2linoleoylGPEP180182_predicted')] = '1-(1-enyl-stearoyl)\n2-linoleoyl-GPE (predicted)'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'eicosenoate201')] = 'eicosenoate'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'leucylglutamine_predicted')] = 'leucylglutamine (predicted)'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'Nacetylmethionine')] = 'acetylmethionine'
+  top_drug_imp_rf$met[which(top_drug_imp_rf$met == 'N1margaroylglycerol170')] = '1-margaroyl glycerol'
+
+  ordr = order(top_drug_imp_rf$MeanDecreaseAccuracy)
+  top_drug_imp_rf$met <- factor(top_drug_imp_rf$met, levels = top_drug_imp_rf$met[ordr])
+  
+  top[[x]] = ggplot() + theme( plot.margin = unit(c(1,2.5,1,1),"mm")) +
+    geom_point(data=top_drug_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +  
+    custom_theme_pca + ylab(NULL) #+
+    #ggtitle(paste(title,'metabolites most predictive of drug treatment'))
+  
+  ggsave(paste(title2,'top_Drug_mets_feb2018.pdf'), top[[x]], width = 94, height = 50, units = "mm")
+  # devSVG(file = paste(title2,'top_drug_mets_dec2017.svg'), width = 4.2, height = 3, xmlHeader = T)
+  # top[[x]]
+  # dev.off()
+  
+  #plot worst blood predictors
+  worst_drug_imp_rf = mutate(worst_drug_imp_rf, met = rownames(worst_drug_imp_rf))
+  ordr = order(worst_drug_imp_rf$MeanDecreaseAccuracy)
+  worst_drug_imp_rf$met <- factor(worst_drug_imp_rf$met, levels = worst_drug_imp_rf$met[ordr])
+  worst_table = worst_drug_imp_rf$met
+  worst[[x]] = ggplot() + 
+    geom_point(data=worst_drug_imp_rf, aes(x = MeanDecreaseAccuracy, y = factor(met))) +
+    custom_theme_pca + ylab(NULL)  
+    #ggtitle(paste(title,'metabolites least predictive of drug treatment')) + 
+
+  ggsave(paste(title2,'worst_Drug_mets_feb2018.pdf'), worst[[x]], width = 80, height = 60, units = "mm")
+  # devSVG(file = paste(title2,'worst_drug_mets_dec2017.svg'), width = 4.2, height = 3, xmlHeader = T)
+  # worst[[x]]
+  # dev.off()
+  
+  rm(ordr, worst_drug_imp_rf, top_drug_imp_rf,drug_imp,df)
+}
+
+```
+
+27 Unnormalized RF drug classifier results
+```{r, echo = FALSE}
+return(rf_Drug[[1]])
+top[[1]]
+worst[[1]]
+```
+
+28 (DNA norm) RF drug classifier results
+```{r, echo = FALSE}
+return(rf_Drug[[2]])
+top[[2]]
+worst[[2]]
+```
+
+29 (Protein norm) RF drug classifier results
+```{r, echo = FALSE}
+return(rf_Drug[[3]])
+top[[3]]
+worst[[3]]
+```
+
+30 (Parasite number norm) RF drug classifier results
+```{r, echo = FALSE}
+return(rf_Drug[[4]])
+top[[4]]
+worst[[4]]
+
+```
+
+31 (DNA and HEPES norm) RF drug classifier results
+```{r, echo = FALSE}
+return(rf_Drug[[5]])
+top[[5]]
+worst[[5]]
+```
+
+
+25 RF drug classifier results - into table
+```{r, echo = FALSE}
+
+top_table_drug = c()
+worst_table_drug = c()
+for (x in 1:5) {
+  top_table_drug[[x]] = as.vector(rownames(top_table[[x]][top_table[[x]]$MeanDecreaseAccuracy>0,]))
+  worst_table_drug[[x]] = as.vector(rownames(top_table[[x]][top_table[[x]]$MeanDecreaseAccuracy<0,]))
+}
+consensus_important_drug = Reduce(intersect,top_table_drug)
+consensus_bad_drug = Reduce(intersect, worst_table_drug)
+contradictory_drug = intersect(unlist(top_table_drug),unlist(worst_table_drug))
+
+print('contradictory mets for drug classifier')
+contradictory_drug
+print('contradictory mets in blood classifier')
+contradictory
+predictive_blood_and_drug = intersect(unlist(top_table_blood),unlist(top_table_drug))
+antipredictive_blood_and_drug = intersect(unlist(worst_table_blood),unlist(worst_table_drug))
+print('mets predictive of blood and drug')
+predictive_blood_and_drug
+print('mets antipredictive of blood and drug')
+antipredictive_blood_and_drug
+
+print((table(unlist(top_table_drug))))
+print((table(unlist(worst_table_drug))))
+print((table(unlist(top_table_blood))))
+print((table(unlist(worst_table_blood))))
+
+# print(sort(table(unlist(top_table_drug))))
+# print(sort(table(unlist(worst_table_drug))))
+# print(sort(table(unlist(top_table_blood))))
+# print(sort(table(unlist(worst_table_blood))))
+
+```
+
+RBC DNA
+``` {r}
+
+RBCdna = read.csv("/Users/maureencarey/local_documents/work/metabolomics_methods/data/urbc_dna_feb212018.csv",
+                  sep = ",", header = T, stringsAsFactors = F)
+
+RBCdna = mutate(RBCdna, imputed_value = ifelse(value == "Too Low", as.numeric(substr(LOD.1pg_per_ul.ul_for_resuspension.,1,nchar(LOD.1pg_per_ul.ul_for_resuspension.)-2)),value))
+
+df = mutate(RBCdna, na = ifelse(value == "Too Low", 1, 0),
+            new_value = ifelse(na == 1, as.numeric(0),as.numeric(as.character(value))))
+
+p = ggplot(df, aes(x = dilution, y = new_value, color = media)) +
+  #facet_wrap(~Blood.age) + 
+  geom_smooth(aes(group = media), method = "lm", se = F)  +
+  geom_point(aes(group = media), alpha = 0.5)  +
+  ylab('DNA  (picograms per mL)')+ guides(color = F) + theme(axis.ticks = element_blank(),
+                                         plot.title = element_text(hjust = 0.5)) +
+  xlab('Dilution factor (in PBS)') + custom_theme4 #+
+  #ggtitle('Culture-derived DNA is primarily from erythrocytes')  
+
+df_undil = df[df$dilution == 1,]
+df_undil = mutate(df_undil, media_legend = ifelse(media == 'RPMI_Hypoxanthine_Albumax',
+                                                  'RPMI, Hypoxanthine,\n& Albumax',
+                                                  gsub("_", " & ", media)))
+p2 = ggplot(df_undil, aes(x = as.factor(dilution), y = new_value*10, fill = media_legend)) +
+  geom_boxplot() + ylab('DNA (picograms)') +xlab('') + #ggtitle("DNA per culture flask") +
+  custom_theme4 + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.ticks = element_blank(), axis.text.x = element_blank())
+
+grid.newpage()
+lay <- rbind(c(1,1,1,1,2,2,2,2,2),
+             c(1,1,1,1,2,2,2,2,2))
+plot_final = grid.arrange(p,p2,ncol = 2, nrow = 1, layout_matrix = lay)#, widths = 2:2)
+ggsave('Feb202018_S1.pdf',plot_final, height = 3, width = 6.875, units = "in")
+
+
+``` 
+
+Random forest with randomized data, per reviewer question
+``` {r}
+
+set.seed(2017) # for first submission date
+
+#random dataset
+df = as.data.frame(matrix(replicate(20, rnorm(297)), nrow = 20, ncol = 297))
+rownames(df) = colnames(raw_file)[30:49]
+# label with 'groups'
+df = mutate(df, 
+            sample = rownames(df), 
+            drug = substr(sample, nchar(sample)-4, nchar(sample))) 
+rownames(df) = df$sample
+df$drug = as.factor(df$drug)
+df$sample = NULL; df$blood = NULL
+df[,-c(ncol(df))] = make_numeric(df[,-c(ncol(df))])
+
+# split into training and validation data set # NOT NEEDED FOR RF, inherent in implementation
+varNames = names(df); varNames = varNames[!varNames %in%  c("drug")]
+varNames1 = paste(varNames, collapse = "+")
+formula = as.formula(paste("drug", varNames1, sep = " ~ ")) 
+rf_Drug = randomForest(formula, data = df, ntree=500, na.action = "na.omit", importance=T)
+
+#varImpPlot(rf_Drug, sort = T,main="Variable Importance for RF",n.var=10)
+drug_imp = as.data.frame(rf_Drug$importance)
+drug_imp = drug_imp[order(drug_imp$MeanDecreaseAccuracy),]
+drug_imp_rf = drug_imp[,-c(1:2)]
+top_drug_imp_rf = drug_imp_rf[(nrow(drug_imp_rf)-9):nrow(drug_imp_rf),]
+worst_drug_imp_rf = drug_imp_rf[1:10,]
+
+print(dim(drug_imp[drug_imp$MeanDecreaseAccuracy>0,]))
+
+
+# anything correlated in random dataset
+df = as.data.frame(matrix(replicate(20, rnorm(297)), nrow = 20, ncol = 297))
+rownames(df) = colnames(raw_file)[30:49]
+cor_mat_temp = as.data.frame(matrix(, nrow = 0, ncol = ncol(df)))
+for (y in 1:ncol(df)) {
+  cor_data = cor.test(df[,1],df[,y], alternative = c("two.sided"), method = c("pearson"))
+  cor_r = cor_data$estimate
+  cor_p = cor_data$p.value
+  colnames(cor_mat_temp)[y] = colnames(df)[y]
+  cor_mat_temp[1,y] = cor_r
+  cor_mat_temp[2,y] = cor_p }
+cor_mat_temp[2,] = p.adjust(cor_mat_temp[2,], method = "fdr")
+for (i in 1:ncol(cor_mat_temp)) {
+  if (cor_mat_temp[2,i] > 0.05) {
+    cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA } # if significant p value
+  else if (abs(cor_mat_temp[1,i]) < 0.5) {
+    cor_mat_temp[2,i] = NA; cor_mat_temp[1,i] = NA } } # if notable correlation coefficient
+cor_mat = cor_mat_temp
+cor_mat_count = cor_mat_temp[colSums(!is.na(cor_mat_temp)) > 0] 
+ifelse(dim(cor_mat_count)[[2]] >1,print(dim(cor_mat_count)[[2]]-1),print('no sig correlations'))
+
+```
