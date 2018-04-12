@@ -156,7 +156,7 @@ custom_theme4 = theme(
   axis.text.y = element_text(colour="black",size=8,angle=0,hjust=1,vjust=0,face="plain",family = "Helvetica"), 
   axis.title.x = element_text(colour="black",size=10,angle=0,hjust=.5,vjust=0,face="plain", family = "Helvetica"), 
   axis.title.y = element_text(colour="black",size=10,angle=90,hjust=.5,vjust=.5,face="plain",family = "Helvetica"),
-  legend.text = = element_text(colour="black",size=8)
+  legend.text = element_text(colour="black",size=8),
   panel.background = element_blank(),
   panel.grid.major = element_blank(),
   panel.grid.minor = element_blank(),
